@@ -24,6 +24,7 @@ tokens {
     CONCAT
 }
 
+ACTIVE: 'ACTIVE';
 ADD: 'ADD';
 ADMIN: 'ADMIN';
 AFTER: 'AFTER';
@@ -181,6 +182,7 @@ IMMEDIATE: 'IMMEDIATE';
 IGNORE: 'IGNORE';
 IMAGE: 'IMAGE';
 IN: 'IN';
+INACTIVE: 'INACTIVE';
 INDEX: 'INDEX';
 INDEXES: 'INDEXES';
 INFILE: 'INFILE';
@@ -516,5 +518,5 @@ SEMICOLON: ';';
 DOTDOTDOT: '...';
 
 WS
-    : [ \r\n\t]+ -> channel(HIDDEN)
+    : [ \r\n\t\u3000]+ -> channel(HIDDEN)
     ;

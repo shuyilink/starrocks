@@ -75,7 +75,7 @@ public class RangePartitionInfo extends PartitionInfo {
     @SerializedName(value = "partitionColumns")
     private List<Column> partitionColumns = Lists.newArrayList();
     // formal partition id -> partition range
-    private Map<Long, Range<PartitionKey>> idToRange = Maps.newHashMap();
+    protected Map<Long, Range<PartitionKey>> idToRange = Maps.newHashMap();
     // temp partition id -> partition range
     private Map<Long, Range<PartitionKey>> idToTempRange = Maps.newHashMap();
 
@@ -215,7 +215,7 @@ public class RangePartitionInfo extends PartitionInfo {
     public Range<PartitionKey> handleNewSinglePartitionDesc(SingleRangePartitionDesc desc,
                                                             long partitionId, boolean isTemp) throws DdlException {
         Preconditions.checkArgument(desc.isAnalyzed());
-        Range<PartitionKey> range = null;
+        Range<PartitionKey> range;
         try {
             range = checkAndCreateRange(desc, isTemp);
             setRangeInternal(partitionId, isTemp, range);
@@ -230,7 +230,8 @@ public class RangePartitionInfo extends PartitionInfo {
         return range;
     }
 
-    public Range<PartitionKey> createAutomaticShadowPartition(long partitionId, String replicateNum) throws DdlException {
+    @Override
+    public void createAutomaticShadowPartition(long partitionId, String replicateNum) throws DdlException {
         Range<PartitionKey> range = null;
         try {
             PartitionKey shadowPartitionKey = PartitionKey.createShadowPartitionKey(partitionColumns);
@@ -245,7 +246,6 @@ public class RangePartitionInfo extends PartitionInfo {
         idToInMemory.put(partitionId, false);
         idToStorageCacheInfo.put(partitionId, new StorageCacheInfo(true,
                 Config.lake_default_storage_cache_ttl_seconds, false));
-        return range;
     }
 
     public void handleNewRangePartitionDescs(Map<Partition, PartitionDesc> partitionMap,

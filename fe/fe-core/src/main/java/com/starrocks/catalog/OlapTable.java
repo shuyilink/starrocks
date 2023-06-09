@@ -1540,6 +1540,8 @@ public class OlapTable extends Table {
             partitionInfo = ListPartitionInfo.read(in);
         } else if (partType == PartitionType.EXPR_RANGE) {
             partitionInfo = ExpressionRangePartitionInfo.read(in);
+        } else if (partType == PartitionType.EXPR_RANGE_V2) {
+            partitionInfo = ExpressionRangePartitionInfoV2.read(in);
         } else {
             throw new IOException("invalid partition type: " + partType);
         }
@@ -1912,7 +1914,7 @@ public class OlapTable extends Table {
 
     // Determine which situation supports importing and automatically creating partitions
     public Boolean supportedAutomaticPartition() {
-        return partitionInfo.getType() == PartitionType.EXPR_RANGE;
+        return partitionInfo.isAutomaticPartition();
     }
 
     public Boolean isBinlogEnabled() {
@@ -2270,11 +2272,7 @@ public class OlapTable extends Table {
         tableProperty.clearBinlogAvailableVersion();
     }
 
-    public boolean hasUniqueConstraints() {
-        List<UniqueConstraint> uniqueConstraint = getUniqueConstraints();
-        return uniqueConstraint != null;
-    }
-
+    @Override
     public List<UniqueConstraint> getUniqueConstraints() {
         if (tableProperty == null) {
             return null;
@@ -2282,6 +2280,7 @@ public class OlapTable extends Table {
         return tableProperty.getUniqueConstraints();
     }
 
+    @Override
     public void setUniqueConstraints(List<UniqueConstraint> uniqueConstraints) {
         if (tableProperty == null) {
             tableProperty = new TableProperty(new HashMap<>());
@@ -2293,6 +2292,7 @@ public class OlapTable extends Table {
         tableProperty.setUniqueConstraints(uniqueConstraints);
     }
 
+    @Override
     public List<ForeignKeyConstraint> getForeignKeyConstraints() {
         if (tableProperty == null) {
             return null;
@@ -2300,7 +2300,8 @@ public class OlapTable extends Table {
         return tableProperty.getForeignKeyConstraints();
     }
 
-    public void setForeignKeyConstraint(List<ForeignKeyConstraint> foreignKeyConstraints) {
+    @Override
+    public void setForeignKeyConstraints(List<ForeignKeyConstraint> foreignKeyConstraints) {
         if (tableProperty == null) {
             tableProperty = new TableProperty(new HashMap<>());
         }

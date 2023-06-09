@@ -27,12 +27,16 @@ import com.starrocks.credential.CloudConfiguration;
 import com.starrocks.credential.CloudConfigurationFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CatalogProperties;
+import org.apache.iceberg.hadoop.HadoopFileIO;
 import org.apache.iceberg.util.ThreadPools;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+
+import static org.apache.iceberg.CatalogProperties.FILE_IO_IMPL;
 
 public class IcebergConnector implements Connector {
     private static final Logger LOG = LogManager.getLogger(IcebergConnector.class);
@@ -42,6 +46,7 @@ public class IcebergConnector implements Connector {
     @Deprecated
     public static final String ICEBERG_METASTORE_URIS = "iceberg.catalog.hive.metastore.uris";
     public static final String HIVE_METASTORE_URIS = "hive.metastore.uris";
+    public static final String ICEBERG_REST_CATALOG_PREFIX = "iceberg.rest-catalog.";
     public static final String ICEBERG_IMPL = "iceberg.catalog-impl";
 
     private final Map<String, String> properties;
@@ -77,6 +82,17 @@ public class IcebergConnector implements Connector {
                 catalogLoader = CatalogLoader.glue(icebergNativeCatalogName, conf, properties);
                 break;
             case REST_CATALOG:
+                properties.put(FILE_IO_IMPL, HadoopFileIO.class.getName());
+                Map<String, String> newProperties = new HashMap<>();
+                properties.forEach((key, value) -> {
+                    String newKey = key.toLowerCase();
+                    String newValue = value.toLowerCase();
+                    if (newKey.startsWith(ICEBERG_REST_CATALOG_PREFIX)) {
+                        newKey = newKey.substring(ICEBERG_REST_CATALOG_PREFIX.length());
+                        newProperties.put(newKey, newValue);
+                    }
+                });
+                properties.putAll(newProperties);
                 catalogLoader = CatalogLoader.rest(icebergNativeCatalogName, conf, properties);
                 break;
             case CUSTOM_CATALOG:

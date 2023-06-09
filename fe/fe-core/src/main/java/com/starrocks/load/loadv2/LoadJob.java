@@ -221,6 +221,18 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
         return state;
     }
 
+    public JobState getAcutalState() {
+        if (state == JobState.LOADING) {
+            if (startLoad) {
+                return JobState.LOADING;
+            } else {
+                return JobState.QUEUEING;
+            }
+        } else {
+            return state;
+        }
+    }
+
     public EtlJobType getJobType() {
         return jobType;
     }
@@ -255,6 +267,10 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
         loadingStatus.setLoadFileInfo(fileNum, fileSize);
     }
 
+    public void updateScanRangeNum(long scanRangeNum) {
+        loadingStatus.updateScanRangeNum(scanRangeNum);
+    }
+
     public TUniqueId getRequestId() {
         return requestId;
     }
@@ -270,12 +286,12 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
     /**
      * Return the real table names by table ids.
      * The method is invoked by 'checkAuth' when authorization info is null in job.
-     * Also it is invoked by 'gatherAuthInfo' which saves the auth info in the constructor of job.
+     * It is also invoked by 'gatherAuthInfo' which saves the auth info in the constructor of job.
      * Throw MetaNofFoundException when table name could not be found.
      *
      * @return
      */
-    public abstract Set<String> getTableNames() throws MetaNotFoundException;
+    public abstract Set<String> getTableNames(boolean noThrow) throws MetaNotFoundException;
 
     // return true if the corresponding transaction is done(COMMITTED, FINISHED, CANCELLED)
     public boolean isTxnDone() {
@@ -571,7 +587,7 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
         // check auth, In new RBAC framework, cancel load and show load will be checked in PrivilegeCheckerV2
         if (!GlobalStateMgr.getCurrentState().isUsingNewPrivilege()) {
             try {
-                Set<String> tableNames = getTableNames();
+                Set<String> tableNames = getTableNames(true);
                 if (tableNames.isEmpty()) {
                     // forward compatibility
                     if (!GlobalStateMgr.getCurrentState().getAuth().checkDbPriv(ConnectContext.get(), db.getFullName(),
@@ -711,6 +727,15 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
             return;
         }
         unprotectReadEndOperation((LoadJobFinalOperation) txnState.getTxnCommitAttachment(), false);
+    }
+
+    /**
+     * This method will update job failMsg without edit log and lock
+     *
+     * @param failMsg
+     */
+    public void unprotectUpdateFailMsg(FailMsg failMsg) {
+        this.failMsg = failMsg;
     }
 
     public List<Comparable> getShowInfo() throws DdlException {

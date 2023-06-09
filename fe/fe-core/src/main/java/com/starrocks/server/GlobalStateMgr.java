@@ -178,6 +178,7 @@ import com.starrocks.metric.MetricRepo;
 import com.starrocks.mysql.privilege.Auth;
 import com.starrocks.mysql.privilege.AuthUpgrader;
 import com.starrocks.mysql.privilege.PrivPredicate;
+import com.starrocks.persist.AlterMaterializedViewStatusLog;
 import com.starrocks.persist.AuthUpgradeInfo;
 import com.starrocks.persist.BackendIdsUpdateInfo;
 import com.starrocks.persist.BackendTabletsInfo;
@@ -311,7 +312,6 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 public class GlobalStateMgr {
     private static final Logger LOG = LogManager.getLogger(GlobalStateMgr.class);
@@ -1439,37 +1439,49 @@ public class GlobalStateMgr {
         for (String dbName : dbNames) {
             Database db = metadataMgr.getDb(InternalCatalog.DEFAULT_INTERNAL_CATALOG_NAME, dbName);
             for (MaterializedView mv : db.getMaterializedViews()) {
-                for (BaseTableInfo baseTableInfo : mv.getBaseTableInfos()) {
-                    Table table = baseTableInfo.getTable();
-                    if (table == null) {
-                        LOG.warn("Setting the materialized view {}({}) to invalid because " +
-                                "the table {} was not exist.", mv.getName(), mv.getId(), baseTableInfo.getTableName());
-                        mv.setActive(false);
-                        continue;
-                    }
-                    if (table instanceof MaterializedView && !((MaterializedView) table).isActive()) {
-                        MaterializedView baseMv = (MaterializedView) table;
-                        LOG.warn("Setting the materialized view {}({}) to invalid because " +
-                                        "the materialized view{}({}) is invalid.", mv.getName(), mv.getId(),
-                                baseMv.getName(), baseMv.getId());
-                        mv.setActive(false);
-                        continue;
-                    }
-                    MvId mvId = new MvId(db.getId(), mv.getId());
-                    table.addRelatedMaterializedView(mvId);
-                    if (!table.isNativeTableOrMaterializedView()) {
-                        connectorTblMetaInfoMgr.addConnectorTableInfo(baseTableInfo.getCatalogName(),
-                                baseTableInfo.getDbName(), baseTableInfo.getTableIdentifier(),
-                                ConnectorTableInfo.builder().setRelatedMaterializedViews(
-                                        Sets.newHashSet(mvId)).build());
-                    }
-                }
+                List<BaseTableInfo> baseTableInfos = mv.getBaseTableInfos();
+                updateBaseTableRelatedMv(db.getId(), mv, baseTableInfos);
             }
         }
 
         long duration = System.currentTimeMillis() - startMillis;
         LOG.info("finish processing all tables' related materialized views in {}ms", duration);
     }
+
+    public void updateBaseTableRelatedMv(Long dbId, MaterializedView mv, List<BaseTableInfo> baseTableInfos) {
+        for (BaseTableInfo baseTableInfo : baseTableInfos) {
+            Table table;
+            try {
+                table = baseTableInfo.getTable();
+            } catch (Exception e) {
+                LOG.warn("there is an exception during get table from mv base table. exception:", e);
+                continue;
+            }
+            if (table == null) {
+                LOG.warn("Setting the materialized view {}({}) to invalid because " +
+                        "the table {} was not exist.", mv.getName(), mv.getId(), baseTableInfo.getTableName());
+                mv.setActive(false);
+                continue;
+            }
+            if (table instanceof MaterializedView && !((MaterializedView) table).isActive()) {
+                MaterializedView baseMv = (MaterializedView) table;
+                LOG.warn("Setting the materialized view {}({}) to invalid because " +
+                                "the materialized view{}({}) is invalid.", mv.getName(), mv.getId(),
+                        baseMv.getName(), baseMv.getId());
+                mv.setActive(false);
+                continue;
+            }
+            MvId mvId = new MvId(dbId, mv.getId());
+            table.addRelatedMaterializedView(mvId);
+            if (!table.isNativeTableOrMaterializedView()) {
+                connectorTblMetaInfoMgr.addConnectorTableInfo(baseTableInfo.getCatalogName(),
+                        baseTableInfo.getDbName(), baseTableInfo.getTableIdentifier(),
+                        ConnectorTableInfo.builder().setRelatedMaterializedViews(
+                                Sets.newHashSet(mvId)).build());
+            }
+        }
+    }
+
 
     public long loadHeader(DataInputStream dis, long checksum) throws IOException {
         // for community, version schema is [int], and the int value must be positive
@@ -2446,36 +2458,8 @@ public class GlobalStateMgr {
                         && !Strings.isNullOrEmpty(properties.get(PropertyAnalyzer.PROPERTIES_FOREIGN_KEY_CONSTRAINT))) {
                     sb.append(StatsConstants.TABLE_PROPERTY_SEPARATOR).append(PropertyAnalyzer.PROPERTIES_FOREIGN_KEY_CONSTRAINT)
                             .append("\" = \"");
-                    List<ForeignKeyConstraint> constraints = olapTable.getForeignKeyConstraints();
-                    List<String> constraintStrs = Lists.newArrayList();
-                    for (ForeignKeyConstraint constraint : constraints) {
-                        BaseTableInfo parentTableInfo = constraint.getParentTableInfo();
-                        StringBuilder constraintSb = new StringBuilder();
-                        constraintSb.append("(");
-                        String baseColumns = Joiner.on(",").join(constraint.getColumnRefPairs()
-                                .stream().map(pair -> pair.first).collect(Collectors.toList()));
-                        constraintSb.append(baseColumns);
-                        constraintSb.append(")");
-                        constraintSb.append(" REFERENCES ");
-                        if (parentTableInfo.getCatalogName().equals(InternalCatalog.DEFAULT_INTERNAL_CATALOG_NAME)) {
-                            Database parentDb = GlobalStateMgr.getCurrentState().getDb(parentTableInfo.getDbId());
-                            constraintSb.append(parentDb.getFullName());
-                            constraintSb.append(".");
-                            Table parentTable = parentDb.getTable(parentTableInfo.getTableId());
-                            constraintSb.append(parentTable.getName());
-                        } else {
-                            constraintSb.append(parentTableInfo);
-                        }
-
-                        constraintSb.append("(");
-                        String parentColumns = Joiner.on(",").join(constraint.getColumnRefPairs()
-                                .stream().map(pair -> pair.second).collect(Collectors.toList()));
-                        constraintSb.append(parentColumns);
-                        constraintSb.append(")");
-                        constraintStrs.add(constraintSb.toString());
-                    }
-
-                    sb.append(Joiner.on(";").join(constraintStrs)).append("\"");
+                    sb.append(ForeignKeyConstraint.getShowCreateTableConstraintDesc(olapTable.getForeignKeyConstraints()))
+                            .append("\"");
                 }
             }
 
@@ -3123,6 +3107,12 @@ public class GlobalStateMgr {
     public void replayAlterMaterializedViewProperties(short opCode, ModifyTablePropertyOperationLog log) {
         this.alter.replayAlterMaterializedViewProperties(opCode, log);
     }
+
+
+    public void replayAlterMaterializedViewStatus(AlterMaterializedViewStatusLog log) {
+        this.alter.replayAlterMaterializedViewStatus(log);
+    }
+
 
     /*
      * used for handling CancelAlterStmt (for client is the CANCEL ALTER

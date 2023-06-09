@@ -14,13 +14,16 @@
 
 package com.starrocks.sql.analyzer;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.Predicate;
 import com.google.common.base.Splitter;
 import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.starrocks.analysis.AnalyticExpr;
+import com.starrocks.analysis.CastExpr;
 import com.starrocks.analysis.DateLiteral;
 import com.starrocks.analysis.Expr;
 import com.starrocks.analysis.FunctionCallExpr;
@@ -30,15 +33,20 @@ import com.starrocks.analysis.IntLiteral;
 import com.starrocks.analysis.LiteralExpr;
 import com.starrocks.analysis.MaxLiteral;
 import com.starrocks.analysis.SlotRef;
+import com.starrocks.analysis.StringLiteral;
 import com.starrocks.analysis.Subquery;
 import com.starrocks.analysis.TableName;
 import com.starrocks.catalog.AggregateFunction;
 import com.starrocks.catalog.ArrayType;
 import com.starrocks.catalog.Database;
+import com.starrocks.catalog.ExpressionRangePartitionInfo;
 import com.starrocks.catalog.Function;
+import com.starrocks.catalog.FunctionSet;
 import com.starrocks.catalog.HiveMetaStoreTable;
 import com.starrocks.catalog.IcebergTable;
+import com.starrocks.catalog.ListPartitionInfo;
 import com.starrocks.catalog.OlapTable;
+import com.starrocks.catalog.PartitionInfo;
 import com.starrocks.catalog.PrimitiveType;
 import com.starrocks.catalog.ScalarType;
 import com.starrocks.catalog.Table;
@@ -55,6 +63,7 @@ import com.starrocks.privilege.PrivilegeType;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.CatalogMgr;
 import com.starrocks.server.GlobalStateMgr;
+import com.starrocks.service.PartitionMeasure;
 import com.starrocks.sql.ast.AddPartitionClause;
 import com.starrocks.sql.ast.AstTraverser;
 import com.starrocks.sql.ast.AstVisitor;
@@ -63,9 +72,12 @@ import com.starrocks.sql.ast.DeleteStmt;
 import com.starrocks.sql.ast.DistributionDesc;
 import com.starrocks.sql.ast.InsertStmt;
 import com.starrocks.sql.ast.JoinRelation;
+import com.starrocks.sql.ast.MultiItemListPartitionDesc;
 import com.starrocks.sql.ast.PartitionKeyDesc;
 import com.starrocks.sql.ast.PartitionValue;
 import com.starrocks.sql.ast.QueryStatement;
+import com.starrocks.sql.ast.Relation;
+import com.starrocks.sql.ast.SelectListItem;
 import com.starrocks.sql.ast.SelectRelation;
 import com.starrocks.sql.ast.SetOperationRelation;
 import com.starrocks.sql.ast.SingleRangePartitionDesc;
@@ -73,6 +85,7 @@ import com.starrocks.sql.ast.StatementBase;
 import com.starrocks.sql.ast.SubqueryRelation;
 import com.starrocks.sql.ast.TableRelation;
 import com.starrocks.sql.ast.UpdateStmt;
+import com.starrocks.sql.ast.ValuesRelation;
 import com.starrocks.sql.ast.ViewRelation;
 import com.starrocks.sql.common.ErrorType;
 import com.starrocks.sql.common.StarRocksPlannerException;
@@ -397,6 +410,18 @@ public class AnalyzerUtils {
         return tableRelations;
     }
 
+    public static List<TableRelation> collectTableRelations(StatementBase statementBase) {
+        List<TableRelation> tableRelations = Lists.newArrayList();
+        new AnalyzerUtils.TableRelationsCollector(tableRelations).visit(statementBase);
+        return tableRelations;
+    }
+
+    public static List<ViewRelation> collectViewRelations(StatementBase statementBase) {
+        List<ViewRelation> viewRelations = Lists.newArrayList();
+        new AnalyzerUtils.ViewRelationsCollector(viewRelations).visit(statementBase);
+        return viewRelations;
+    }
+
     public static boolean isOnlyHasOlapTables(StatementBase statementBase) {
         Map<TableName, Table> nonOlapTables = Maps.newHashMap();
         new AnalyzerUtils.NonOlapTableCollector(nonOlapTables).visit(statementBase);
@@ -548,6 +573,37 @@ public class AnalyzerUtils {
         }
     }
 
+    private static class ViewRelationsCollector extends AstTraverser<Void, Void> {
+
+        private final List<ViewRelation> viewRelations;
+
+        public ViewRelationsCollector(List<ViewRelation> viewRelations) {
+            this.viewRelations = viewRelations;
+        }
+
+        @Override
+        public Void visitView(ViewRelation node, Void context) {
+            viewRelations.add(node);
+            return null;
+        }
+    }
+
+    private static class TableRelationsCollector extends TableCollector {
+
+        private final List<TableRelation> tableRelations;
+
+        public TableRelationsCollector(List<TableRelation> tableRelations) {
+            super(null);
+            this.tableRelations = tableRelations;
+        }
+
+        @Override
+        public Void visitTable(TableRelation node, Void context) {
+            tableRelations.add(node);
+            return null;
+        }
+    }
+
     private static class SubQueryRelationCollector extends TableCollector {
         Map<TableName, SubqueryRelation> subQueryRelations;
 
@@ -667,25 +723,125 @@ public class AnalyzerUtils {
         }
     }
 
+
+
+    public static PartitionMeasure checkAndGetPartitionMeasure(ExpressionRangePartitionInfo expressionRangePartitionInfo)
+            throws AnalysisException {
+        long interval = 1;
+        String granularity;
+        List<Expr> partitionExprs = expressionRangePartitionInfo.getPartitionExprs();
+
+        if (partitionExprs.size() != 1) {
+            throw new AnalysisException("automatic partition only support one expression partitionExpr.");
+        }
+        Expr expr = partitionExprs.get(0);
+        if (!(expr instanceof FunctionCallExpr)) {
+            throw new AnalysisException("automatic partition only support FunctionCallExpr");
+        }
+        FunctionCallExpr functionCallExpr = (FunctionCallExpr) expr;
+        String fnName = functionCallExpr.getFnName().getFunction();
+        if (fnName.equals(FunctionSet.DATE_TRUNC)) {
+            List<Expr> paramsExprs = functionCallExpr.getParams().exprs();
+            if (paramsExprs.size() != 2) {
+                throw new AnalysisException("date_trunc params exprs size should be 2.");
+            }
+            Expr granularityExpr = paramsExprs.get(0);
+            if (!(granularityExpr instanceof StringLiteral)) {
+                throw new AnalysisException("date_trunc granularity is not string literal.");
+            }
+            StringLiteral granularityLiteral = (StringLiteral) granularityExpr;
+            granularity = granularityLiteral.getStringValue();
+        } else if (fnName.equals(FunctionSet.TIME_SLICE)) {
+            List<Expr> paramsExprs = functionCallExpr.getParams().exprs();
+            if (paramsExprs.size() != 4) {
+                throw new AnalysisException("time_slice params exprs size should be 4.");
+            }
+            Expr intervalExpr = paramsExprs.get(1);
+            if (!(intervalExpr instanceof IntLiteral)) {
+                throw new AnalysisException("time_slice interval is not int literal.");
+            }
+            Expr granularityExpr = paramsExprs.get(2);
+            if (!(granularityExpr instanceof StringLiteral)) {
+                throw new AnalysisException("time_slice granularity is not string literal.");
+            }
+            StringLiteral granularityLiteral = (StringLiteral) granularityExpr;
+            IntLiteral intervalLiteral = (IntLiteral) intervalExpr;
+            granularity = granularityLiteral.getStringValue();
+            interval = intervalLiteral.getLongValue();
+        } else {
+            throw new AnalysisException("automatic partition only support data_trunc function.");
+        }
+        return new PartitionMeasure(interval, granularity);
+    }
+
     public static Map<String, AddPartitionClause> getAddPartitionClauseFromPartitionValues(OlapTable olapTable,
-                                                                                           List<String> partitionValues,
-                                                                                           long interval,
-                                                                                           String granularity,
-                                                                                           Type firstPartitionColumnType)
+                                                                                           List<List<String>> partitionValues)
             throws AnalysisException {
         Map<String, AddPartitionClause> result = Maps.newHashMap();
+        PartitionInfo partitionInfo = olapTable.getPartitionInfo();
+        if (partitionInfo instanceof ExpressionRangePartitionInfo) {
+            PartitionMeasure measure = checkAndGetPartitionMeasure((ExpressionRangePartitionInfo) partitionInfo);
+            getAddPartitionClauseForRangePartition(olapTable, partitionValues, measure, result,
+                    (ExpressionRangePartitionInfo) partitionInfo);
+        } else if (partitionInfo instanceof ListPartitionInfo) {
+            Short replicationNum = olapTable.getTableProperty().getReplicationNum();
+            DistributionDesc distributionDesc = olapTable.getDefaultDistributionInfo().toDistributionDesc();
+            Map<String, String> partitionProperties = ImmutableMap.of("replication_num", String.valueOf(replicationNum));
+            String partitionPrefix = "p";
+
+            for (List<String> partitionValue : partitionValues) {
+                List<String> formattedPartitionValue = Lists.newArrayList();
+                for (String value : partitionValue) {
+                    String formatValue = value.replaceAll("[^a-zA-Z0-9]", "");
+                    formattedPartitionValue.add(formatValue);
+                }
+                String partitionName = partitionPrefix + Joiner.on("_").join(formattedPartitionValue);
+                if (partitionName.length() > 64) {
+                    partitionName = partitionName.substring(0, 64);
+                }
+                MultiItemListPartitionDesc multiItemListPartitionDesc = new MultiItemListPartitionDesc(true,
+                        partitionName, Collections.singletonList(partitionValue), partitionProperties);
+
+                multiItemListPartitionDesc.setSystem(true);
+                AddPartitionClause addPartitionClause =
+                        new AddPartitionClause(multiItemListPartitionDesc, distributionDesc,
+                                partitionProperties, false);
+                result.put(partitionName, addPartitionClause);
+            }
+        } else {
+            throw new AnalysisException("automatic partition only support partition by value.");
+        }
+        return result;
+    }
+
+    private static void getAddPartitionClauseForRangePartition(OlapTable olapTable, List<List<String>> partitionValues,
+                                                               PartitionMeasure measure,
+                                                               Map<String, AddPartitionClause> result,
+                                                               ExpressionRangePartitionInfo expressionRangePartitionInfo)
+            throws AnalysisException {
+        String granularity = measure.getGranularity();
+        long interval = measure.getInterval();
+        Type firstPartitionColumnType = expressionRangePartitionInfo.getPartitionColumns().get(0).getType();
         String partitionPrefix = "p";
-        for (String partitionValue : partitionValues) {
+        Short replicationNum = olapTable.getTableProperty().getReplicationNum();
+        DistributionDesc distributionDesc = olapTable.getDefaultDistributionInfo().toDistributionDesc();
+        Map<String, String> partitionProperties = ImmutableMap.of("replication_num", String.valueOf(replicationNum));
+
+        for (List<String> partitionValue : partitionValues) {
+            if (partitionValue.size() != 1) {
+                throw new AnalysisException("automatic partition only support single column for range partition.");
+            }
+            String partitionItem = partitionValue.get(0);
             DateTimeFormatter beginDateTimeFormat;
             LocalDateTime beginTime;
             LocalDateTime endTime;
             String partitionName;
             try {
-                if ("NULL".equalsIgnoreCase(partitionValue)) {
-                    partitionValue = "0000-01-01";
+                if ("NULL".equalsIgnoreCase(partitionItem)) {
+                    partitionItem = "0000-01-01";
                 }
-                beginDateTimeFormat = DateUtils.probeFormat(partitionValue);
-                beginTime = DateUtils.parseStringWithDefaultHSM(partitionValue, beginDateTimeFormat);
+                beginDateTimeFormat = DateUtils.probeFormat(partitionItem);
+                beginTime = DateUtils.parseStringWithDefaultHSM(partitionItem, beginDateTimeFormat);
                 // The start date here is passed by BE through function calculation,
                 // so it must be the start date of a certain partition.
                 switch (granularity.toLowerCase()) {
@@ -713,10 +869,6 @@ public class AnalyzerUtils {
                         throw new AnalysisException("unsupported automatic partition granularity:" + granularity);
                 }
                 PartitionKeyDesc partitionKeyDesc = createPartitionKeyDesc(firstPartitionColumnType, beginTime, endTime);
-                Map<String, String> partitionProperties = Maps.newHashMap();
-                Short replicationNum = olapTable.getTableProperty().getReplicationNum();
-                partitionProperties.put("replication_num", String.valueOf(replicationNum));
-                DistributionDesc distributionDesc = olapTable.getDefaultDistributionInfo().toDistributionDesc();
 
                 SingleRangePartitionDesc singleRangePartitionDesc =
                         new SingleRangePartitionDesc(true, partitionName, partitionKeyDesc, partitionProperties);
@@ -729,7 +881,6 @@ public class AnalyzerUtils {
                 throw new AnalysisException(String.format("failed to analyse partition value:%s", partitionValue));
             }
         }
-        return result;
     }
 
     private static PartitionKeyDesc createPartitionKeyDesc(Type partitionType, LocalDateTime beginTime,
@@ -770,5 +921,66 @@ public class AnalyzerUtils {
             }
         }
         return null;
+    }
+
+    public static SlotRef getSlotRefFromCast(Expr expr) {
+        if (expr instanceof CastExpr) {
+            CastExpr castExpr = (CastExpr) expr;
+            ArrayList<Expr> children = castExpr.getChildren();
+            for (Expr child : children) {
+                SlotRef slotRef = null;
+                if (child instanceof SlotRef) {
+                    slotRef = (SlotRef) child;
+                } else if (child instanceof CastExpr) {
+                    slotRef = getSlotRefFromCast(child);
+                } else if (child instanceof FunctionCallExpr) {
+                    slotRef = getSlotRefFromFunctionCall(child);
+                }
+                if (slotRef != null) {
+                    return slotRef;
+                }
+            }
+        }
+        return null;
+    }
+
+    public static Expr resolveSlotRef(SlotRef slotRef, QueryStatement queryStatement) {
+        AstVisitor<Expr, Void> slotRefResolver = new AstVisitor<Expr, Void>() {
+            @Override
+            public Expr visitSelect(SelectRelation node, Void context) {
+                for (SelectListItem selectListItem : node.getSelectList().getItems()) {
+                    if (selectListItem.getAlias() == null) {
+                        if (selectListItem.getExpr() instanceof SlotRef) {
+                            SlotRef slot = (SlotRef) selectListItem.getExpr();
+                            if (slot.getColumnName().equalsIgnoreCase(slotRef.getColumnName())) {
+                                return slot;
+                            }
+                        }
+                    } else {
+                        if (selectListItem.getAlias().equalsIgnoreCase(slotRef.getColumnName())) {
+                            return selectListItem.getExpr();
+                        }
+                    }
+                }
+                return null;
+            }
+
+            @Override
+            public Expr visitSetOp(SetOperationRelation node, Void context) {
+                for (Relation relation : node.getRelations()) {
+                    Expr resolved = relation.accept(this, null);
+                    if (resolved != null) {
+                        return resolved;
+                    }
+                }
+                return null;
+            }
+
+            @Override
+            public SlotRef visitValues(ValuesRelation node, Void context) {
+                return null;
+            }
+        };
+        return queryStatement.getQueryRelation().accept(slotRefResolver, null);
     }
 }

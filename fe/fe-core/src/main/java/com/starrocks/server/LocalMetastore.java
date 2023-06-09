@@ -71,7 +71,6 @@ import com.starrocks.catalog.ForeignKeyConstraint;
 import com.starrocks.catalog.FunctionSet;
 import com.starrocks.catalog.HashDistributionInfo;
 import com.starrocks.catalog.HiveTable;
-import com.starrocks.catalog.InfoSchemaDb;
 import com.starrocks.catalog.JDBCTable;
 import com.starrocks.catalog.KeysType;
 import com.starrocks.catalog.ListPartitionInfo;
@@ -96,6 +95,8 @@ import com.starrocks.catalog.TabletInvertedIndex;
 import com.starrocks.catalog.TabletMeta;
 import com.starrocks.catalog.UniqueConstraint;
 import com.starrocks.catalog.View;
+import com.starrocks.catalog.system.information.InfoSchemaDb;
+import com.starrocks.catalog.system.starrocks.StarRocksDb;
 import com.starrocks.clone.DynamicPartitionScheduler;
 import com.starrocks.cluster.Cluster;
 import com.starrocks.cluster.ClusterNamespace;
@@ -357,21 +358,22 @@ public class LocalMetastore implements ConnectorMetadata {
     }
 
     public long saveDb(DataOutputStream dos, long checksum) throws IOException {
-        int dbCount = idToDb.size() - 1;
+        // Don't write system db meta
+        Map<Long, Database> idToDbNormal = idToDb.entrySet().stream()
+                .filter(entry -> entry.getKey() > NEXT_ID_INIT_VALUE)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        int dbCount = idToDbNormal.size();
+
         checksum ^= dbCount;
         dos.writeInt(dbCount);
-        for (Map.Entry<Long, Database> entry : idToDb.entrySet()) {
+        for (Map.Entry<Long, Database> entry : idToDbNormal.entrySet()) {
             Database db = entry.getValue();
-            String dbName = db.getFullName();
-            // Don't write information_schema db meta
-            if (!InfoSchemaDb.isInfoSchemaDb(dbName)) {
-                checksum ^= entry.getKey();
-                db.readLock();
-                try {
-                    db.write(dos);
-                } finally {
-                    db.readUnlock();
-                }
+            checksum ^= entry.getKey();
+            db.readLock();
+            try {
+                db.write(dos);
+            } finally {
+                db.readUnlock();
             }
         }
         return checksum;
@@ -982,44 +984,6 @@ public class LocalMetastore implements ConnectorMetadata {
         }
     }
 
-    private int calAvgBucketNumOfRecentPartitions(OlapTable olapTable, int recentPartitionNum) {
-        // 1. If the partition is less than recentPartitionNum, use backendNum to speculate the bucketNum
-        int bucketNum = 0;
-        if (olapTable.getPartitions().size() < recentPartitionNum) {
-            bucketNum = CatalogUtils.calBucketNumAccordingToBackends();
-            return bucketNum;
-        }
-
-        // 2. If the partition is not imported anydata, use backendNum to speculate the bucketNum
-        List<Partition> partitions = (List<Partition>) olapTable.getRecentPartitions(recentPartitionNum);
-        boolean dataImported = true;
-        for (Partition partition : partitions) {
-            if (partition.getVisibleVersion() == 1) {
-                dataImported = false;
-                break;
-            }
-        }
-
-        bucketNum = CatalogUtils.calBucketNumAccordingToBackends();
-        if (!dataImported) {
-            return bucketNum;
-        }
-
-        // 3. Use the totalSize of recentPartitions to speculate the bucketNum
-        long maxDataSize = 0;
-        for (Partition partition : partitions) {
-            maxDataSize = Math.max(maxDataSize, partition.getDataSize());
-        }
-        // A tablet will be regarded using the 1GB size
-        // And also the number will not be larger than the calBucketNumAccordingToBackends()
-        long speculateTabletNum = (maxDataSize + FeConstants.AUTO_DISTRIBUTION_UNIT - 1) / FeConstants.AUTO_DISTRIBUTION_UNIT;
-        bucketNum = (int) Math.min(bucketNum, speculateTabletNum);
-        if (bucketNum == 0) {
-            bucketNum = 1;
-        }
-        return bucketNum;
-    }
-
     private DistributionInfo getDistributionInfo(OlapTable olapTable, AddPartitionClause addPartitionClause)
             throws DdlException {
         DistributionInfo distributionInfo;
@@ -1048,17 +1012,7 @@ public class LocalMetastore implements ConnectorMetadata {
                 }
             }
         } else {
-            if (defaultDistributionInfo.getType() == DistributionInfo.DistributionInfoType.HASH
-                    && Config.enable_auto_tablet_distribution
-                    && !colocateTableIndex.isColocateTable(olapTable.getId())) {
-                // 1. If enable_auto_tablet_distribution = true, AUTO Tablet Distibution
-                //    also take effect on exist table when adding new partitions
-                // 2. ColocateTable should comply the original tablet num when creating table.
-                HashDistributionInfo hashDistributionInfo = (HashDistributionInfo) defaultDistributionInfo;
-                distributionInfo = new HashDistributionInfo(0, hashDistributionInfo.getDistributionColumns());
-            } else {
-                distributionInfo = defaultDistributionInfo;
-            }
+            distributionInfo = defaultDistributionInfo;
         }
         return distributionInfo;
     }
@@ -1342,10 +1296,10 @@ public class LocalMetastore implements ConnectorMetadata {
             analyzeAddPartition(olapTable, partitionDescs, addPartitionClause, partitionInfo);
 
             // get distributionInfo
-            distributionInfo = getDistributionInfo(olapTable, addPartitionClause);
-
+            distributionInfo = getDistributionInfo(olapTable, addPartitionClause).copy();
             if (distributionInfo.getBucketNum() == 0) {
-                int numBucket = calAvgBucketNumOfRecentPartitions(olapTable, 5);
+                int numBucket = CatalogUtils.calAvgBucketNumOfRecentPartitions(olapTable, 5,
+                                    Config.enable_auto_tablet_distribution);
                 distributionInfo.setBucketNum(numBucket);
             }
 
@@ -1640,7 +1594,11 @@ public class LocalMetastore implements ConnectorMetadata {
             MaterializedIndex rollup = new MaterializedIndex(indexId, MaterializedIndex.IndexState.NORMAL);
             indexMap.put(indexId, rollup);
         }
-        DistributionInfo distributionInfo = table.getDefaultDistributionInfo();
+        DistributionInfo distributionInfo = table.getDefaultDistributionInfo().copy();
+        if (distributionInfo.getBucketNum() == 0) {
+            int numBucket = CatalogUtils.calAvgBucketNumOfRecentPartitions(table, 5, Config.enable_auto_tablet_distribution);
+            distributionInfo.setBucketNum(numBucket);
+        }
 
         // create shard group
         long shardGroupId = 0;
@@ -1923,7 +1881,7 @@ public class LocalMetastore implements ConnectorMetadata {
                 List<Map.Entry<Long, Long>> unfinishedMarks = countDownLatch.getLeftMarks();
                 List<Map.Entry<Long, Long>> firstThree =
                         unfinishedMarks.subList(0, Math.min(unfinishedMarks.size(), 3));
-                StringBuilder sb = new StringBuilder("fail to create tablet: timed out. unfinished replicas");
+                StringBuilder sb = new StringBuilder("Table creation timed out. unfinished replicas");
                 sb.append("(").append(firstThree.size()).append("/").append(unfinishedMarks.size()).append("): ");
                 // Show details of the first 3 unfinished tablets.
                 for (Map.Entry<Long, Long> mark : firstThree) {
@@ -1933,11 +1891,23 @@ public class LocalMetastore implements ConnectorMetadata {
                     sb.append(backend != null ? backend.getHost() : "N/A");
                     sb.append(") ");
                 }
-                sb.append(" timeout=").append(timeout).append("s");
+                sb.append(" timeout=").append(timeout).append('s');
                 String errMsg = sb.toString();
                 LOG.warn(errMsg);
+
+                String userErrorMsg = String.format(
+                        "Table creation timed out.\n You can increase the timeout by increasing the " +
+                        "config \"tablet_create_timeout_second\" and try again.\n" +
+                        "To increase the config \"tablet_create_timeout_second\" (currently %d), run the following command:\n" +
+                        "```\nadmin set frontend config(\"tablet_create_timeout_second\"=\"%d\")\n```\n" +
+                        "or add the following configuration to the fe.conf file and restart the process:\n" +
+                        "```\ntablet_create_timeout_second=%d\n```",
+                        Config.tablet_create_timeout_second,
+                        Config.tablet_create_timeout_second * 2,
+                        Config.tablet_create_timeout_second * 2
+                        );
                 countDownLatch.countDownToZero(new Status(TStatusCode.TIMEOUT, "timed out"));
-                throw new DdlException(errMsg);
+                throw new DdlException(userErrorMsg);
             }
         } catch (InterruptedException e) {
             LOG.warn(e);
@@ -1980,14 +1950,14 @@ public class LocalMetastore implements ConnectorMetadata {
         return colocateTableIndex;
     }
 
-    private void processColocationProperties(String colocateGroup, Database db, OlapTable olapTable, boolean expectLakeTable)
+    private boolean processColocationProperties(String colocateGroup, Database db, OlapTable olapTable, boolean expectLakeTable)
             throws DdlException {
         if (Strings.isNullOrEmpty(colocateGroup)) {
-            return;
+            return false;
         }
 
         if (olapTable.isCloudNativeTable() != expectLakeTable) {
-            return;
+            return false;
         }
 
         String fullGroupName = db.getId() + "_" + colocateGroup;
@@ -2011,6 +1981,7 @@ public class LocalMetastore implements ConnectorMetadata {
                         new ColocateTableIndex.GroupId(db.getId(), colocateGrpIdInOtherDb.grpId),
                 false /* isReplay */);
         olapTable.setColocateGroup(colocateGroup);
+        return true;
     }
 
     private void setLakeStorageInfo(OlapTable table, Map<String, String> properties) throws DdlException {
@@ -2089,15 +2060,14 @@ public class LocalMetastore implements ConnectorMetadata {
             } else {
                 throw new DdlException("Currently only support range or list partition with engine type olap");
             }
-            partitionInfo = partitionDesc.toPartitionInfo(baseSchema, partitionNameToId, false, true);
+            partitionInfo = partitionDesc.toPartitionInfo(baseSchema, partitionNameToId, false);
 
             // Automatic partitioning needs to ensure that at least one tablet is opened.
-            if (partitionInfo instanceof ExpressionRangePartitionInfo) {
-                ExpressionRangePartitionInfo expressionRangePartitionInfo = (ExpressionRangePartitionInfo) partitionInfo;
+            if (partitionInfo.isAutomaticPartition()) {
                 long partitionId = getNextId();
                 String replicateNum = stmt.getProperties().getOrDefault("replication_num",
                         String.valueOf(RunMode.defaultReplicationNum()));
-                expressionRangePartitionInfo.createAutomaticShadowPartition(partitionId, replicateNum);
+                partitionInfo.createAutomaticShadowPartition(partitionId, replicateNum);
                 partitionNameToId.put(ExpressionRangePartitionInfo.AUTOMATIC_SHADOW_PARTITION_NAME, partitionId);
             }
 
@@ -2152,11 +2122,6 @@ public class LocalMetastore implements ConnectorMetadata {
             table = new ExternalOlapTable(db.getId(), tableId, tableName, baseSchema, keysType, partitionInfo,
                     distributionInfo, indexes, properties);
         } else if (stmt.isOlapEngine()) {
-            if (distributionInfo.getBucketNum() == 0) {
-                int bucketNum = CatalogUtils.calBucketNumAccordingToBackends();
-                distributionInfo.setBucketNum(bucketNum);
-            }
-
             RunMode runMode = RunMode.getCurrentRunMode();
             String volume = (properties != null) ? properties.remove(PropertyAnalyzer.PROPERTIES_STORAGE_VOLUME) : null;
 
@@ -2326,7 +2291,16 @@ public class LocalMetastore implements ConnectorMetadata {
         String colocateGroup = null;
         try {
             colocateGroup = PropertyAnalyzer.analyzeColocate(properties);
-            processColocationProperties(colocateGroup, db, table, false /* expectLakeTable */);
+            boolean addedToColocateGroup = processColocationProperties(colocateGroup, db,
+                                                table, false /* expectLakeTable */);
+            if (table instanceof ExternalOlapTable == false && addedToColocateGroup) {
+                // Colocate table should keep the same bucket number accross the partitions
+                DistributionInfo defaultDistributionInfo = table.getDefaultDistributionInfo();
+                if (defaultDistributionInfo.getBucketNum() == 0) {
+                    int bucketNum = CatalogUtils.calBucketNumAccordingToBackends();
+                    defaultDistributionInfo.setBucketNum(bucketNum);
+                }
+            }
         } catch (AnalysisException e) {
             throw new DdlException(e.getMessage());
         }
@@ -2573,7 +2547,7 @@ public class LocalMetastore implements ConnectorMetadata {
 
     private void processConstraint(
             Database db, OlapTable olapTable, Map<String, String> properties) throws AnalysisException {
-        List<UniqueConstraint> uniqueConstraints = PropertyAnalyzer.analyzeUniqueConstraint(properties, olapTable);
+        List<UniqueConstraint> uniqueConstraints = PropertyAnalyzer.analyzeUniqueConstraint(properties, db, olapTable);
         if (uniqueConstraints != null) {
             olapTable.setUniqueConstraints(uniqueConstraints);
         }
@@ -2581,7 +2555,7 @@ public class LocalMetastore implements ConnectorMetadata {
         List<ForeignKeyConstraint> foreignKeyConstraints =
                 PropertyAnalyzer.analyzeForeignKeyConstraint(properties, db, olapTable);
         if (foreignKeyConstraints != null) {
-            olapTable.setForeignKeyConstraint(foreignKeyConstraints);
+            olapTable.setForeignKeyConstraints(foreignKeyConstraints);
         }
     }
 
@@ -2629,7 +2603,7 @@ public class LocalMetastore implements ConnectorMetadata {
         PartitionInfo partitionInfo = null;
         Map<String, Long> partitionNameToId = Maps.newHashMap();
         if (partitionDesc != null) {
-            partitionInfo = partitionDesc.toPartitionInfo(baseSchema, partitionNameToId, false, false);
+            partitionInfo = partitionDesc.toPartitionInfo(baseSchema, partitionNameToId, false);
         } else {
             long partitionId = getNextId();
             // use table name as single partition name
@@ -2821,9 +2795,13 @@ public class LocalMetastore implements ConnectorMetadata {
             throw new DdlException("Unknown distribution type: " + distributionInfoType);
         }
 
+        Map<String, String> properties = new HashMap<>();
+        properties.put(LakeTablet.PROPERTY_KEY_TABLE_ID, Long.toString(table.getId()));
+        properties.put(LakeTablet.PROPERTY_KEY_PARTITION_ID, Long.toString(partitionId));
+        properties.put(LakeTablet.PROPERTY_KEY_INDEX_ID, Long.toString(index.getId()));
         int bucketNum = distributionInfo.getBucketNum();
         List<Long> shardIds = stateMgr.getStarOSAgent().createShards(bucketNum,
-                table.getPartitionFilePathInfo(), table.getPartitionFileCacheInfo(partitionId), shardGroupId);
+                table.getPartitionFilePathInfo(), table.getPartitionFileCacheInfo(partitionId), shardGroupId, properties);
         for (long shardId : shardIds) {
             Tablet tablet = new LakeTablet(shardId);
             index.addTablet(tablet, tabletMeta);
@@ -3126,7 +3104,8 @@ public class LocalMetastore implements ConnectorMetadata {
             // Then we reassemble the origin cluster name with lower case db name,
             // and finally get information_schema db from the name map.
             String dbName = ClusterNamespace.getNameFromFullName(name);
-            if (dbName.equalsIgnoreCase(InfoSchemaDb.DATABASE_NAME)) {
+            if (dbName.equalsIgnoreCase(InfoSchemaDb.DATABASE_NAME) ||
+                    dbName.equalsIgnoreCase(StarRocksDb.DATABASE_NAME)) {
                 return fullNameToDb.get(dbName.toLowerCase());
             }
         }
@@ -3402,10 +3381,6 @@ public class LocalMetastore implements ConnectorMetadata {
         DistributionDesc distributionDesc = stmt.getDistributionDesc();
         Preconditions.checkNotNull(distributionDesc);
         DistributionInfo distributionInfo = distributionDesc.toDistributionInfo(baseSchema);
-        if (distributionInfo.getBucketNum() == 0) {
-            int numBucket = CatalogUtils.calBucketNumAccordingToBackends();
-            distributionInfo.setBucketNum(numBucket);
-        }
         // create refresh scheme
         MaterializedView.MvRefreshScheme mvRefreshScheme;
         RefreshSchemeDesc refreshSchemeDesc = stmt.getRefreshSchemeDesc();
@@ -3592,6 +3567,16 @@ public class LocalMetastore implements ConnectorMetadata {
                                 String.valueOf(forceExternalTableQueryReWrite));
                 materializedView.getTableProperty().setForceExternalTableQueryRewrite(forceExternalTableQueryReWrite);
             }
+            if (properties.containsKey(PropertyAnalyzer.PROPERTIES_UNIQUE_CONSTRAINT)) {
+                List<UniqueConstraint> uniqueConstraints = PropertyAnalyzer.analyzeUniqueConstraint(properties, db,
+                        materializedView);
+                materializedView.setUniqueConstraints(uniqueConstraints);
+            }
+            if (properties.containsKey(PropertyAnalyzer.PROPERTIES_FOREIGN_KEY_CONSTRAINT)) {
+                List<ForeignKeyConstraint> foreignKeyConstraints = PropertyAnalyzer.analyzeForeignKeyConstraint(
+                        properties, db, materializedView);
+                materializedView.setForeignKeyConstraints(foreignKeyConstraints);
+            }
 
             if (properties.containsKey(PropertyAnalyzer.PROPERTIES_COLOCATE_WITH)) {
                 String colocateGroup = PropertyAnalyzer.analyzeColocate(properties);
@@ -3686,7 +3671,7 @@ public class LocalMetastore implements ConnectorMetadata {
         if (partitionDesc != null) {
             partitionInfo = partitionDesc.toPartitionInfo(
                     Collections.singletonList(stmt.getPartitionColumn()),
-                    Maps.newHashMap(), false, false);
+                    Maps.newHashMap(), false);
         } else {
             partitionInfo = new SinglePartitionInfo();
         }
@@ -4529,6 +4514,8 @@ public class LocalMetastore implements ConnectorMetadata {
         // create info schema db
         final InfoSchemaDb infoDb = new InfoSchemaDb();
         unprotectCreateDb(infoDb);
+        final StarRocksDb mysqlSchemaDb = new StarRocksDb();
+        unprotectCreateDb(mysqlSchemaDb);
 
         // only need to create default cluster once.
         stateMgr.setIsDefaultClusterCreated(true);
@@ -4554,7 +4541,7 @@ public class LocalMetastore implements ConnectorMetadata {
                 // for adding BE to some Cluster, but loadCluster is after loadBackend.
                 cluster.setBackendIdList(latestBackendIds);
 
-                String dbName = InfoSchemaDb.getFullInfoSchemaDbName();
+                String dbName = InfoSchemaDb.DATABASE_NAME;
                 InfoSchemaDb db;
                 // Use real GlobalStateMgr instance to avoid InfoSchemaDb id continuously increment
                 // when checkpoint thread load image.
@@ -4572,6 +4559,17 @@ public class LocalMetastore implements ConnectorMetadata {
                 idToDb.put(db.getId(), db);
                 fullNameToDb.put(db.getFullName(), db);
                 cluster.addDb(dbName, db.getId());
+
+                if (getFullNameToDb().containsKey(StarRocksDb.DATABASE_NAME)) {
+                    LOG.warn("Since the the database of starrocsks already exists, " +
+                            "the system will not automatically create the database of starrocks for system.");
+                } else {
+                    StarRocksDb starRocksDb = new StarRocksDb();
+                    Preconditions.checkState(starRocksDb.getId() < NEXT_ID_INIT_VALUE, errMsg);
+                    idToDb.put(starRocksDb.getId(), starRocksDb);
+                    fullNameToDb.put(starRocksDb.getFullName(), starRocksDb);
+                    cluster.addDb(StarRocksDb.DATABASE_NAME, starRocksDb.getId());
+                }
                 defaultCluster = cluster;
             }
         }

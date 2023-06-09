@@ -6,7 +6,7 @@ Broker Load runs in asynchronous loading mode. After you submit a load job, Star
 
 Broker Load supports single-table loads and multi-table loads. You can load one or multiple data files into one or multiple destination tables by running one Broker Load job. Broker Load ensures the transactional atomicity of each load job that is run to load multiple data files. Atomicity means that the loading of multiple data files in one load job must all succeed or fail. It never happens that the loading of some data files succeeds while the loading of the other files fails.
 
-Broker Load also supports data transformation at data loading. For more information, see [Transform data at loading](../loading/Etl_in_loading.md).
+Broker Load supports data transformation at data loading and supports data changes made by UPSERT and DELETE operations during data loading. For more information, see [Transform data at loading](../loading/Etl_in_loading.md) and [Change data through loading](../loading/Load_to_Primary_Key_tables.md).
 
 ## Background information
 
@@ -14,10 +14,7 @@ In v2.4 and earlier, StarRocks depends on brokers to set up connections between 
 
 From v2.5 onwards, StarRocks no longer depends on brokers to set up connections between your StarRocks cluster and your external storage system when it runs a Broker Load job. Therefore, you no longer need to specify a broker in the load statement, but you still need to retain the `WITH BROKER` keyword. This is called "broker-free loading."
 
-When your data is stored in HDFS, however, broker-free loading may not work and you can resort to broker-based loading:
-
-- If you load data from multiple HDFS clusters, you need to deploy and configure an independent broker for each of these HDFS clusters.
-- If you load data from a single HDFS cluster and you have configured multiple Kerberos users, you need to deploy one independent broker.
+When your data is stored in HDFS, you may encounter situations where broker-free loading does not work. This can happen when your data is stored across multiple HDFS clusters or when you have configured multiple Kerberos users. In these situations, you can resort to using broker-based loading instead. To do this successfully, make sure that at least one independent broker group is deployed. For information about how to specify authentication configuration and HA configuration in these situations, see [HDFS](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md#hdfs).
 
 > **NOTE**
 >
@@ -118,7 +115,7 @@ Note that in StarRocks some literals are used as reserved keywords by the SQL la
    200,'Beijing'
    ```
 
-3. Upload `file1.csv` and `file2.csv` to the `/user/starrocks/` path of your HDFS cluster, to the `input` folder of your AWS S3 bucket `bucket_s3`, and to the `input` folder of your Google GCS bucket `bucket_gcs`.
+3. Upload `file1.csv` and `file2.csv` to the `/user/starrocks/` path of your HDFS cluster, to the `input` folder of your AWS S3 bucket `bucket_s3`, to the `input` folder of your Google GCS bucket `bucket_gcs`, to the `input` folder of your MinIO bucket `bucket_minio`, and to the specified paths of your Azure Storage.
 
 #### Load data from HDFS
 
@@ -147,7 +144,7 @@ PROPERTIES
 );
 ```
 
-For detailed syntax and parameter descriptions, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md).
+In the preceding example, `StorageCredentialParams` represents a group of authentication parameters which vary depending on the authentication method you choose. For more information, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md#hdfs).
 
 #### Load data from AWS S3
 
@@ -176,7 +173,7 @@ WITH BROKER
 >
 > Broker Load supports accessing AWS S3 only according to the S3A protocol. Therefore, when you load data from AWS S3, you must replace `s3://` in the S3 URI you pass as the file path with `s3a://`.
 
-For detailed syntax and parameter descriptions, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md).
+In the preceding example, `StorageCredentialParams` represents a group of authentication parameters which vary depending on the authentication method you choose. For more information, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md#aws-s3).
 
 #### Load data from Google GCS
 
@@ -205,7 +202,7 @@ WITH BROKER
 >
 > Broker Load supports accessing Google GCS only according to the gs protocol. Therefore, when you load data from Google GCS, you must include `gs://` as the prefix in the GCS URI that you pass as the file path.
 
-For detailed syntax and parameter descriptions, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md).
+In the preceding example, `StorageCredentialParams` represents a group of authentication parameters which vary depending on the authentication method you choose. For more information, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md#google-gcs).
 
 #### Load data from other S3-compatible storage system
 
@@ -230,7 +227,7 @@ WITH BROKER
 );
 ```
 
-For detailed syntax and parameter descriptions, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md).
+In the preceding example, `StorageCredentialParams` represents a group of authentication parameters which vary depending on the authentication method you choose. For more information, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md#other-s3-compatible-storage-system).
 
 #### Load data from Microsoft Azure Storage
 
@@ -267,7 +264,7 @@ WITH BROKER
   >   - If your Data Lake Storage Gen2 allows access only via HTTP, use `abfs://` as the prefix, for example, `abfs://<container>@<storage_account>.dfs.core.windows.net/<file_name>`.
   >   - If your Data Lake Storage Gen2 allows access only via HTTPS, use `abfss://` as the prefix, for example, `abfss://<container>@<storage_account>.dfs.core.windows.net/<file_name>`.
 
-For detailed syntax and parameter descriptions, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md).
+In the preceding example, `StorageCredentialParams` represents a group of authentication parameters which vary depending on the authentication method you choose. For more information, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md#microsoft-azure-storage).
 
 #### Query data
 
@@ -336,6 +333,8 @@ WITH BROKER
 );
 ```
 
+In the preceding examples, `StorageCredentialParams` represents a group of authentication parameters which vary depending on the authentication method you choose. For more information, see [BROKER LOAD](../sql-reference/sql-statements/data-manipulation/BROKER%20LOAD.md#aws-s3).
+
 ### View a load job
 
 Broker Load allows you to view a lob job by using the SHOW LOAD statement or the `curl` command.
@@ -349,14 +348,18 @@ For more information, see [SHOW LOAD](../sql-reference/sql-statements/data-manip
 The syntax is as follows:
 
 ```Bash
-curl --location-trusted -u root: \
+curl --location-trusted -u <username>:<password> \
     'http://<fe_host>:<fe_http_port>/api/<database_name>/_load_info?label=<label_name>'
 ```
+
+> **NOTE**
+>
+> If you use an account for which no password is set, you need to input only `<username>:`.
 
 For example, you can run the following command to view the information about a load job, whose label is `label1`, in the `test_db` database:
 
 ```Bash
-curl --location-trusted -u root: \
+curl --location-trusted -u <username>:<password> \
     'http://<fe_host>:<fe_http_port>/api/test_db/_load_info?label=label1'
 ```
 

@@ -45,7 +45,6 @@ import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Database;
 import com.starrocks.catalog.DynamicPartitionProperty;
 import com.starrocks.catalog.HashDistributionInfo;
-import com.starrocks.catalog.InfoSchemaDb;
 import com.starrocks.catalog.OlapTable;
 import com.starrocks.catalog.PartitionInfo;
 import com.starrocks.catalog.PartitionKey;
@@ -250,18 +249,21 @@ public class DynamicPartitionScheduler extends LeaderDaemon {
                             dynamicPartitionProperty.getTimeUnit());
             SingleRangePartitionDesc rangePartitionDesc =
                     new SingleRangePartitionDesc(false, partitionName, partitionKeyDesc, partitionProperties);
+            if (dynamicPartitionProperty.getBuckets() == 0) {
+                addPartitionClauses.add(new AddPartitionClause(rangePartitionDesc, null, null, false));
+            } else {
+                // construct distribution desc
+                HashDistributionInfo hashDistributionInfo = (HashDistributionInfo) olapTable.getDefaultDistributionInfo();
+                List<String> distColumnNames = new ArrayList<>();
+                for (Column distributionColumn : hashDistributionInfo.getDistributionColumns()) {
+                    distColumnNames.add(distributionColumn.getName());
+                }
+                DistributionDesc distributionDesc = new HashDistributionDesc(dynamicPartitionProperty.getBuckets(),
+                                                                             distColumnNames);
 
-            // construct distribution desc
-            HashDistributionInfo hashDistributionInfo = (HashDistributionInfo) olapTable.getDefaultDistributionInfo();
-            List<String> distColumnNames = new ArrayList<>();
-            for (Column distributionColumn : hashDistributionInfo.getDistributionColumns()) {
-                distColumnNames.add(distributionColumn.getName());
+                // add partition according to partition desc and distribution desc
+                addPartitionClauses.add(new AddPartitionClause(rangePartitionDesc, distributionDesc, null, false));
             }
-            DistributionDesc distributionDesc =
-                    new HashDistributionDesc(dynamicPartitionProperty.getBuckets(), distColumnNames);
-
-            // add partition according to partition desc and distribution desc
-            addPartitionClauses.add(new AddPartitionClause(rangePartitionDesc, distributionDesc, null, false));
         }
         return addPartitionClauses;
     }
@@ -572,10 +574,10 @@ public class DynamicPartitionScheduler extends LeaderDaemon {
             if (db == null) {
                 continue;
             }
-            String dbName = db.getFullName();
-            if (dbName.equals(InfoSchemaDb.DATABASE_NAME) || dbName.equals(StatsConstants.STATISTICS_DB_NAME)) {
+            if (db.isSystemDatabase() || db.getFullName().equals(StatsConstants.STATISTICS_DB_NAME)) {
                 continue;
             }
+
             db.readLock();
             try {
                 for (Table table : GlobalStateMgr.getCurrentState().getDb(dbId).getTables()) {

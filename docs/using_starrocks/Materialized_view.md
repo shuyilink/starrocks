@@ -173,7 +173,7 @@ GROUP BY order_id;
 
     | Configuration item                                           | Default                              | Description                          |
     | ------------------------------------------------------------ | ------------------------------------ | ------------------------------------ |
-    | enable_background_refresh_connector_metadata                 | `true` in v3.0<br />`false` in v2.5  | Whether to enable the periodic Hive metadata cache refresh. After it is enabled, StarRocks polls the Hive Metastore of the frequently accessed Hive catalogs to perceive data changes, and caches the information in the catalog metadata. `true` indicates to enable the Hive metadata cache refresh, and `false` indicates to disable it. This item is an FE dynamic parameter. You can modify it using the [ADMIN SET FRONTEND CONFIG](../sql-reference/sql-statements/Administration/ADMIN%20SET%20CONFIG.md) command. |
+    | enable_background_refresh_connector_metadata                 | `true` in v3.0<br />`false` in v2.5  | Whether to enable the periodic Hive metadata cache refresh. After it is enabled, StarRocks polls the metastore (Hive Metastore or AWS Glue) of your Hive cluster, and refreshes the cached metadata of the frequently accessed Hive catalogs to perceive data changes. `true` indicates to enable the Hive metadata cache refresh, and `false` indicates to disable it. This item is an FE dynamic parameter. You can modify it using the [ADMIN SET FRONTEND CONFIG](../sql-reference/sql-statements/Administration/ADMIN%20SET%20CONFIG.md) command. |
     | background_refresh_metadata_interval_millis                  | `600000` (10 minutes)                | The interval between two consecutive Hive metadata cache refreshes. Unit: millisecond. This item is an FE dynamic parameter. You can modify it using the [ADMIN SET FRONTEND CONFIG](../sql-reference/sql-statements/Administration/ADMIN%20SET%20CONFIG.md) command. |
     | background_refresh_metadata_time_secs_since_last_access_secs | `86400` (24 hours)                   | The expiration time of a Hive metadata cache refresh task. For the Hive catalog that has been accessed, if it has not been accessed for more than the specified time, StarRocks stops refreshing its cached metadata. For the Hive catalog that has not been accessed, StarRocks will not refresh its cached metadata. Unit: second. This item is an FE dynamic parameter. You can modify it using the [ADMIN SET FRONTEND CONFIG](../sql-reference/sql-statements/Administration/ADMIN%20SET%20CONFIG.md) command. |
 
@@ -257,11 +257,11 @@ View Delta Join queries can be rewritten only when the following requirements ar
 
   For example, the materialized view is of the form `A INNER JOIN B ON (A.a1 = B.b1) LEFT OUTER JOIN C ON (B.b2 = C.c1)`, and the query is of the form `A INNER JOIN B ON (A.a1 = B.b1)`. In this case, `B LEFT OUTER JOIN C ON (B.b2 = C.c1)` is the Delta Join. `B.b2` must be the Foreign Key of B, and `C.c1` must be the Primary Key or Unique Key of C.
 
-To implement the above constraints, you must define the Foreign Key constraints of a table using the property `foreign_key_constraints` when creating the table. For more information, see [CREATE TABLE - PROPERTIES](../sql-reference/sql-statements/data-definition/CREATE%20TABLE.md#parameters).
+To implement the above constraints, you must define the Unique Key constraints and Foreign Key constraints of a table using the properties `unique_constraints` and `foreign_key_constraints` when creating the table. For more information, see [CREATE TABLE - PROPERTIES](../sql-reference/sql-statements/data-definition/CREATE%20TABLE.md#parameters).
 
 > **CAUTION**
 >
-> The Foreign Key constraints are only used for query rewrite. Foreign Key constraint checks are not guaranteed when data is loaded into the table. You must ensure the data loaded into the table meets the constraints.
+> The Unique Key constraints and Foreign Key constraints are only used for query rewrite. The Foreign Key constraint checks are not guaranteed when data is loaded into the table. You must ensure the data loaded into the table meets the constraints.
 
 The following example defines multiple Foreign Keys when creating the table `lineorder`:
 
@@ -289,6 +289,8 @@ DUPLICATE KEY(`lo_orderkey`)
 COMMENT "OLAP"
 DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 192
 PROPERTIES (
+-- Define Unique Keys in unique_constraints
+"unique_constraints" = "lo_orderkey,lo_linenumber",
 -- Define Foreign Keys in foreign_key_constraints
 "foreign_key_constraints" = "
     (lo_custkey) REFERENCES customer(c_custkey);
@@ -450,3 +452,10 @@ You can drop an asynchronous materialized view via [DROP MATERIALIZED VIEW](../s
 ```Plain
 DROP MATERIALIZED VIEW order_mv;
 ```
+
+### Relevant session variables
+
+The following variables control the behaviour of an asynchronous materialized view:
+
+- `analyze_mv`: Whether and how to analyze the materialized view after refresh. Valid values are an empty string (Do not analyze), `sample` (Sampled statistics collection), and `full` (Full statistics collection). Default is `sample`.
+- `enable_materialized_view_rewrite`: Whether to enable the automatic rewrite for materialized view. Valid values are `true` (Default since v2.5) and `false`.

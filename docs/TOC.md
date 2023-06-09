@@ -42,6 +42,7 @@
     + [Data distribution](./table_design/Data_distribution.md)
     + [Automatic partitioning](./table_design/automatic_partitioning.md)
     + [Dynamic partitioning](./table_design/dynamic_partitioning.md)
+    + [Temporary partition](./table_design/Temporary_partition.md)
   + [Data compression](./table_design/data_compression.md)
   + [Sort keys and prefix indexes](./table_design/Sort_key.md)
 + Data Loading
@@ -74,7 +75,7 @@
     + [Query external data](./data_source/catalog/query_external_data.md)
   + [External table](./data_source/External_table.md)
   + [File external table](./data_source/file_external_table.md)
-  + [Local Cache](./data_source/Block_cache.md)
+  + [Data Cache](./data_source/data_cache.md)
 + Query Acceleration
   + [Gather CBO statistics](./using_starrocks/Cost_based_optimizer.md)
   + [Synchronous materialized view](./using_starrocks/Materialized_view-single_table.md)
@@ -118,6 +119,7 @@
       + [Query queue](./administration/query_queues.md)
       + [Query management](./administration/Query_management.md)
       + [Memory management](./administration/Memory_management.md)
+      + [Spill to disk](./administration/spill_to_disk.md)
       + [Load balance](./administration/Load_balance.md)
       + [Replica](./administration/Replica.md)
       + [Blacklist](./administration/Blacklist.md)
@@ -314,10 +316,12 @@
     + [Window functions](./sql-reference/sql-functions/Window_function.md)
     + [Lambda expression](./sql-reference/sql-functions/Lambda_expression.md)
     + Aggregate Functions
+      + [array_agg](./sql-reference/sql-functions/array-functions/array_agg.md)
       + [avg](./sql-reference/sql-functions/aggregate-functions/avg.md)
       + [any_value](./sql-reference/sql-functions/aggregate-functions/any_value.md)
       + [approx_count_distinct](./sql-reference/sql-functions/aggregate-functions/approx_count_distinct.md)
       + [bitmap](./sql-reference/sql-functions/aggregate-functions/bitmap.md)
+      + [bitmap_agg](./sql-reference/sql-functions/bitmap-functions/bitmap_agg.md)
       + [count](./sql-reference/sql-functions/aggregate-functions/count.md)
       + [grouping](./sql-reference/sql-functions/aggregate-functions/grouping.md)
       + [grouping_id](./sql-reference/sql-functions/aggregate-functions/grouping_id.md)
@@ -380,6 +384,7 @@
       + [bit_shift_right_logical](./sql-reference/sql-functions/bit-functions/bit_shift_right_logical.md)
     + Bitmap Functions
       + [base64_to_bitmap](./sql-reference/sql-functions/bitmap-functions/base64_to_bitmap.md)
+      + [bitmap_agg](./sql-reference/sql-functions/bitmap-functions/bitmap_agg.md)
       + [bitmap_and](./sql-reference/sql-functions/bitmap-functions/bitmap_and.md)
       + [bitmap_andnot](./sql-reference/sql-functions/bitmap-functions/bitmap_andnot.md)
       + [bitmap_contains](./sql-reference/sql-functions/bitmap-functions/bitmap_contains.md)
@@ -437,6 +442,7 @@
       + [to_binary](/sql-reference/sql-functions/binary-functions/to_binary.md)
       + [from_binary](/sql-reference/sql-functions/binary-functions/from_binary.md)
     + Conditional Functions
+      + [case](./sql-reference/sql-functions/condition-functions/case_when.md)
       + [coalesce](./sql-reference/sql-functions/condition-functions/coalesce.md)
       + [if](./sql-reference/sql-functions/condition-functions/if.md)
       + [ifnull](./sql-reference/sql-functions/condition-functions/ifnull.md)
@@ -511,6 +517,7 @@
       + [unix_timestamp](./sql-reference/sql-functions/date-time-functions/unix_timestamp.md)
       + [utc_timestamp](./sql-reference/sql-functions/date-time-functions/utc_timestamp.md)
       + [week](./sql-reference/sql-functions/date-time-functions/week.md)
+      + [week_iso](./sql-reference/sql-functions/date-time-functions/week_iso.md)
       + [weekofyear](./sql-reference/sql-functions/date-time-functions/weekofyear.md)
       + [weeks_add](./sql-reference/sql-functions/date-time-functions/weeks_add.md)
       + [weeks_diff](./sql-reference/sql-functions/date-time-functions/weeks_diff.md)

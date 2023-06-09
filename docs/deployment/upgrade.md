@@ -8,13 +8,13 @@ Review the information in this section before upgrading, and perform any recomme
 
 ### StarRocks versions
 
-The version of StarRocks is represented by three numbers in the form **Major.Minor.Patch**, for example, `2.5.4`. The first number represents the major version of StarRocks, the second number represents the minor version, and the third number represents the patch version. Currently, v2.2 and v2.5 are the Long-term Support (LTS) versions. Their support duration lasts more than half a year.
+The version of StarRocks is represented by three numbers in the form **Major.Minor.Patch**, for example, `2.5.4`. The first number represents the major version of StarRocks, the second number represents the minor version, and the third number represents the patch version. StarRocks provides Long-term Support (LTS) for certain versions. Their support duration lasts more than half a year.
 
 | **StarRocks version** | **Is the LTS version** |
 | --------------------- | ---------------------- |
 | v2.0.x                | No                     |
 | v2.1.x                | No                     |
-| v2.2.x                | Yes                    |
+| v2.2.x                | No                     |
 | v2.3.x                | No                     |
 | v2.4.x                | No                     |
 | v2.5.x                | Yes                    |
@@ -271,3 +271,12 @@ After upgrading all BE and CN nodes, you can then upgrade the FE nodes. You must
    ```
 
 5. Repeat the above procedures to upgrade other Follower FE nodes, and finally the Leader FE node.
+
+   > **CAUTION**
+   >
+   > If you have downgraded your StarRocks cluster after upgrading it from v2.5 to v3.0, and again you upgrade it to v3.0, you must follow these steps in order to avoid metadata upgrade failure for some Follower FEs:
+   >
+   > 1. Run [ALTER SYSTEM CREATE IMAGE](../sql-reference/sql-statements/Administration/ALTER%20SYSTEM.md) to create a new image.
+   > 2. Wait for the new image to be synchronized to all Follower FEs.
+   >
+   > You can check whether the image file has been synchronized by viewing the log file **fe.log** of the Leader FE. A record of log like "push image.* from subdir [] to other nodes. totally xx nodes, push successful xx nodes" suggests that the image file has been successfully synchronized.

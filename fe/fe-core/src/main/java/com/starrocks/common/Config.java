@@ -35,6 +35,8 @@
 package com.starrocks.common;
 
 import com.starrocks.StarRocksFE;
+import com.starrocks.catalog.LocalTablet;
+import com.starrocks.catalog.Replica;
 
 public class Config extends ConfigBase {
 
@@ -689,7 +691,7 @@ public class Config extends ConfigBase {
      * the create table request will run at most (m * n * tablet_create_timeout_second) before timeout.
      */
     @ConfField(mutable = true)
-    public static int tablet_create_timeout_second = 1;
+    public static int tablet_create_timeout_second = 10;
 
     /**
      * minimal intervals between two publish version action
@@ -1165,6 +1167,37 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = true)
     public static boolean tablet_sched_always_force_decommission_replica = false;
+
+    /**
+     * For certain deployment, like k8s pods + pvc, the replica is not lost even the
+     * corresponding backend is detected as dead, because the replica data is persisted
+     * on a pvc which is backed by a remote storage service, such as AWS EBS. And later,
+     * k8s control place will schedule a new pod and attach the pvc to it which will
+     * restore the replica to a {@link Replica.ReplicaState#NORMAL} state immediately. But normally
+     * the {@link com.starrocks.clone.TabletScheduler} of Starrocks will start to schedule
+     * {@link LocalTablet.TabletStatus#REPLICA_MISSING} tasks and create new replicas in a short time.
+     * After new pod scheduling is completed, {@link com.starrocks.clone.TabletScheduler} has
+     * to delete the redundant healthy replica which cause resource waste and may also affect
+     * the loading process.
+     *
+     * <p>When a backend is considered to be dead, this configuration specifies how long the
+     * {@link com.starrocks.clone.TabletScheduler} should wait before starting to schedule
+     * {@link LocalTablet.TabletStatus#REPLICA_MISSING} tasks. It is intended to leave some time for
+     * the external scheduler like k8s to handle the repair process before internal scheduler kicks in
+     * or for the system administrator to restart and put the backend online in time.
+     * To be noticed, it only affects the dead backend situation, the scheduler
+     * may still schedule {@link LocalTablet.TabletStatus#REPLICA_MISSING} tasks because of
+     * other reasons, like manually setting a replica as bad, actively decommission a backend etc.
+     *
+     * <p>Currently this configuration only works for non-colocate tables, for colocate tables,
+     * refer to {@link Config#tablet_sched_colocate_be_down_tolerate_time_s}.
+     *
+     * <p>For more discussion on this issue, see
+     * <a href="https://github.com/StarRocks/starrocks-kubernetes-operator/issues/49">issue49</a>
+     *
+     */
+    @ConfField(mutable = true)
+    public static long tablet_sched_be_down_tolerate_time_s = 900; // 15 min
 
     /**
      * If BE is down beyond this time, tablets on that BE of colocate table will be migrated to other available BEs
@@ -1880,6 +1913,12 @@ public class Config extends ConfigBase {
     public static boolean enable_shuffle_load = true;
 
     /**
+     * Eliminate shuffle load by replicated storage
+     */
+    @ConfField(mutable = true)
+    public static boolean eliminate_shuffle_load_by_replicated_storage = true;
+
+    /**
      * Unused config field, leave it here for backward compatibility
      */
     @Deprecated
@@ -1947,7 +1986,7 @@ public class Config extends ConfigBase {
     public static int cloud_native_meta_port = 6090;
     // remote storage related configuration
     /**
-     * storage type for cloud native table. Available options: "S3", "HDFS", case-sensitive
+     * storage type for cloud native table. Available options: "S3", "HDFS", "AZBLOB". case-insensitive
      */
     @ConfField
     public static String cloud_native_storage_type = "S3";
@@ -2193,7 +2232,7 @@ public class Config extends ConfigBase {
      * Enable auto create tablet when creating table and add partition
      **/
     @ConfField(mutable = true)
-    public static boolean enable_auto_tablet_distribution = false;
+    public static boolean enable_auto_tablet_distribution = true;
 
     /**
      * default size of minimum cache size of auto increment id allocation
@@ -2218,4 +2257,16 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = true)
     public static short default_replication_num = 3;
+
+    /**
+     * If set to <= 0, means that no limitation.
+     */
+    @ConfField(mutable = true)
+    public static int max_upload_task_per_be = 0;
+
+    /**
+     * If set to <= 0, means that no limitation.
+     */
+    @ConfField(mutable = true)
+    public static int max_download_task_per_be = 0;
 }

@@ -36,6 +36,7 @@ package com.starrocks.catalog;
 
 import com.google.common.base.Preconditions;
 import com.google.gson.annotations.SerializedName;
+import com.starrocks.common.DdlException;
 import com.starrocks.common.FeMetaVersion;
 import com.starrocks.common.NotImplementedException;
 import com.starrocks.common.io.Text;
@@ -111,7 +112,7 @@ public class PartitionInfo implements Writable, GsonPreProcessable, GsonPostProc
     }
 
     public boolean isRangePartition() {
-        return type == PartitionType.RANGE || type == PartitionType.EXPR_RANGE;
+        return type == PartitionType.RANGE || type == PartitionType.EXPR_RANGE || type == PartitionType.EXPR_RANGE_V2;
     }
 
     public DataProperty getDataProperty(long partitionId) {
@@ -290,5 +291,12 @@ public class PartitionInfo implements Writable, GsonPreProcessable, GsonPostProc
         }
 
         return buff.toString();
+    }
+
+    public void createAutomaticShadowPartition(long partitionId, String replicateNum) throws DdlException {
+    }
+
+    public boolean isAutomaticPartition() {
+        return false;
     }
 }

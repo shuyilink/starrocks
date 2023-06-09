@@ -14,7 +14,7 @@ Stream Load is suitable for the following business scenarios:
   
   In most cases, we recommend that you use programs such as Apache Flink® to submit a load job, within which a series of tasks can be generated to continuously load streaming data in real time into StarRocks.
 
-Additionally, Stream Load supports data transformation at data loading. For more information, see [Transform data at loading](../loading/Etl_in_loading.md).
+Stream Load supports data transformation at data loading and supports data changes made by UPSERT and DELETE operations during data loading. For more information, see [Transform data at loading](../loading/Etl_in_loading.md) and [Change data through loading](../loading/Load_to_Primary_Key_tables.md).
 
 > **NOTE**
 >
@@ -95,7 +95,8 @@ Note that in StarRocks some literals are used as reserved keywords by the SQL la
 Run the following command to load the data of `example1.csv` into `table1`:
 
 ```Bash
-curl --location-trusted -u root: -H "label:123" \
+curl --location-trusted -u <username>:<password> -H "label:123" \
+    -H "Expect:100-continue" \
     -H "column_separator:," \
     -H "columns: id, name, score" \
     -T example1.csv -XPUT \
@@ -149,7 +150,8 @@ MySQL [test_db]> SELECT * FROM table1;
 Run the following command to load the data of `example2.json` into `table2`:
 
 ```Bash
-curl -v --location-trusted -u root: -H "strict_mode: true" \
+curl -v --location-trusted -u <username>:<password> -H "strict_mode: true" \
+    -H "Expect:100-continue" \
     -H "format: json" -H "jsonpaths: [\"$.name\", \"$.code\"]" \
     -H "columns: city,tmp_id, id = tmp_id * 100" \
     -T example2.json -XPUT \

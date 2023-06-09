@@ -82,6 +82,7 @@ import com.starrocks.sql.parser.ParsingException;
 import io.trino.sql.tree.AliasedRelation;
 import io.trino.sql.tree.AllColumns;
 import io.trino.sql.tree.ArithmeticBinaryExpression;
+import io.trino.sql.tree.ArithmeticUnaryExpression;
 import io.trino.sql.tree.ArrayConstructor;
 import io.trino.sql.tree.AstVisitor;
 import io.trino.sql.tree.BetweenPredicate;
@@ -146,6 +147,7 @@ import io.trino.sql.tree.Table;
 import io.trino.sql.tree.TableSubquery;
 import io.trino.sql.tree.TimestampLiteral;
 import io.trino.sql.tree.Trim;
+import io.trino.sql.tree.TryExpression;
 import io.trino.sql.tree.Union;
 import io.trino.sql.tree.WhenClause;
 import io.trino.sql.tree.Window;
@@ -692,6 +694,11 @@ public class AstBuilder extends AstVisitor<ParseNode, ParseTreeContext> {
         }
     }
 
+    @Override
+    protected ParseNode visitTryExpression(TryExpression node, ParseTreeContext context) {
+        return visit(node.getInnerExpression(), context);
+    }
+
     private static final BigInteger LONG_MAX = new BigInteger("9223372036854775807");
 
     private static final BigInteger LARGEINT_MAX_ABS =
@@ -759,6 +766,8 @@ public class AstBuilder extends AstVisitor<ParseNode, ParseTreeContext> {
             } catch (AnalysisException e) {
                 throw new ParsingException(e.getMessage());
             }
+        } else if (node.getType().equalsIgnoreCase("json")) {
+            return new com.starrocks.analysis.StringLiteral(node.getValue());
         }
         throw new ParsingException("Parse Error : unknown type " + node.getType());
     }
@@ -806,6 +815,16 @@ public class AstBuilder extends AstVisitor<ParseNode, ParseTreeContext> {
         String fieldString = node.getField().toString();
         return new FunctionCallExpr(fieldString,
                 new FunctionParams(Lists.newArrayList((Expr) visit(node.getExpression(), context))));
+    }
+
+    @Override
+    protected ParseNode visitArithmeticUnary(ArithmeticUnaryExpression node, ParseTreeContext context) {
+        Expr child = (Expr) visit(node.getValue(), context);
+        if (node.getSign() == ArithmeticUnaryExpression.Sign.MINUS) {
+            return new ArithmeticExpr(ArithmeticExpr.Operator.MULTIPLY, new IntLiteral(-1), child);
+        } else  {
+            return child;
+        }
     }
 
     @Override

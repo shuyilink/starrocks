@@ -39,6 +39,8 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.starrocks.catalog.Table.TableType;
+import com.starrocks.catalog.system.information.InfoSchemaDb;
+import com.starrocks.catalog.system.starrocks.StarRocksDb;
 import com.starrocks.cluster.ClusterNamespace;
 import com.starrocks.common.Config;
 import com.starrocks.common.DdlException;
@@ -51,6 +53,7 @@ import com.starrocks.common.UserException;
 import com.starrocks.common.io.Text;
 import com.starrocks.common.io.Writable;
 import com.starrocks.common.util.DebugUtil;
+import com.starrocks.common.util.LogUtil;
 import com.starrocks.common.util.QueryableReentrantReadWriteLock;
 import com.starrocks.common.util.Util;
 import com.starrocks.persist.CreateTableInfo;
@@ -156,8 +159,8 @@ public class Database extends MetaObject implements Writable {
                 endMs > lastSlowLockLogTime + Config.slow_lock_log_every_ms) {
             lastSlowLockLogTime = endMs;
             LOG.warn("slow db lock. type: {}, db id: {}, db name: {}, wait time: {}ms, " +
-                            "former {}, current stack trace: ", type, id, fullQualifiedName, endMs - startMs,
-                    threadDump, new Exception());
+                            "former {}, current stack trace: {}", type, id, fullQualifiedName, endMs - startMs,
+                    threadDump, LogUtil.getCurrentStackTrace());
         }
     }
 
@@ -907,8 +910,9 @@ public class Database extends MetaObject implements Writable {
         return functions;
     }
 
-    public boolean isInfoSchemaDb() {
-        return fullQualifiedName.equalsIgnoreCase(InfoSchemaDb.DATABASE_NAME);
+    public boolean isSystemDatabase() {
+        return fullQualifiedName.equalsIgnoreCase(InfoSchemaDb.DATABASE_NAME) ||
+                fullQualifiedName.equalsIgnoreCase(StarRocksDb.DATABASE_NAME);
     }
 
     // the invoker should hold db's writeLock

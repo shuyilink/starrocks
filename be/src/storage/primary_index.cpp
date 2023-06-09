@@ -983,9 +983,9 @@ static string int_list_to_string(const vector<uint32_t>& l) {
     return ret;
 }
 
-Status PrimaryIndex::prepare(const EditVersion& version) {
+Status PrimaryIndex::prepare(const EditVersion& version, size_t n) {
     if (_persistent_index != nullptr) {
-        return _persistent_index->prepare(version);
+        return _persistent_index->prepare(version, n);
     }
     return Status::OK();
 }
@@ -1161,7 +1161,8 @@ Status PrimaryIndex::_build_persistent_values(uint32_t rssid, const vector<uint3
 const Slice* PrimaryIndex::_build_persistent_keys(const Column& pks, uint32_t idx_begin, uint32_t idx_end,
                                                   std::vector<Slice>* key_slices) const {
     if (pks.is_binary()) {
-        return reinterpret_cast<const Slice*>(pks.raw_data());
+        const Slice* vkeys = reinterpret_cast<const Slice*>(pks.raw_data());
+        return vkeys + idx_begin;
     } else {
         const uint8_t* keys = pks.raw_data();
         for (size_t i = idx_begin; i < idx_end; i++) {

@@ -175,6 +175,11 @@ public class MaterializedView extends OlapTable implements GsonPostProcessable {
             return baseTableInfoVisibleVersionMap;
         }
 
+        public void clearVisibleVersionMap() {
+            this.baseTableInfoVisibleVersionMap.clear();
+            this.baseTableVisibleVersionMap.clear();
+        }
+
         public boolean isDefineStartTime() {
             return defineStartTime;
         }
@@ -839,6 +844,21 @@ public class MaterializedView extends OlapTable implements GsonPostProcessable {
             sb.append(StatsConstants.TABLE_PROPERTY_SEPARATOR).append(PropertyAnalyzer.PROPERTIES_COLOCATE_WITH)
                     .append("\" = \"");
             sb.append(colocateGroup).append("\"");
+        }
+      
+        // unique constraints
+        if (properties.containsKey(PropertyAnalyzer.PROPERTIES_UNIQUE_CONSTRAINT)) {
+            sb.append(StatsConstants.TABLE_PROPERTY_SEPARATOR).append(PropertyAnalyzer.PROPERTIES_UNIQUE_CONSTRAINT)
+                    .append("\" = \"");
+            sb.append(properties.get(PropertyAnalyzer.PROPERTIES_UNIQUE_CONSTRAINT)).append("\"");
+        }
+
+        // foreign keys constraints
+        if (properties.containsKey(PropertyAnalyzer.PROPERTIES_FOREIGN_KEY_CONSTRAINT)) {
+            sb.append(StatsConstants.TABLE_PROPERTY_SEPARATOR).append(PropertyAnalyzer.PROPERTIES_FOREIGN_KEY_CONSTRAINT)
+                    .append("\" = \"");
+            sb.append(ForeignKeyConstraint.getShowCreateTableConstraintDesc(getForeignKeyConstraints()))
+                    .append("\"");
         }
 
         appendUniqueProperties(sb);

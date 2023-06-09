@@ -227,6 +227,7 @@ vectorized_functions = [
     [20073, 'bit_shift_right_logical', 'BIGINT', ['BIGINT', 'BIGINT'], "BitFunctions::bitShiftRightLogical<TYPE_BIGINT>"],
     [20074, 'bit_shift_right_logical', 'LARGEINT', ['LARGEINT', 'BIGINT'], "BitFunctions::bitShiftRightLogical<TYPE_LARGEINT>"],
 
+
     # 30xxx: string functions
     [30010, 'substr', 'VARCHAR', ['VARCHAR', 'INT'], 'StringFunctions::substring', 'StringFunctions::sub_str_prepare', 'StringFunctions::sub_str_close'],
     [30011, 'substr', 'VARCHAR', ['VARCHAR', 'INT', 'INT'], 'StringFunctions::substring', 'StringFunctions::sub_str_prepare', 'StringFunctions::sub_str_close'],
@@ -346,6 +347,7 @@ vectorized_functions = [
     [50063, 'weekofyear', 'INT', ['DATETIME'], 'TimeFunctions::week_of_year'],
     [50064, 'week', 'INT', ['DATETIME'], 'TimeFunctions::week_of_year_with_default_mode'],
     [50067, 'week', 'INT', ['DATETIME', 'INT'], 'TimeFunctions::week_of_year_with_mode'],
+    [50068, 'week_iso', 'INT', ['DATETIME'], 'TimeFunctions::week_of_year_iso'],
 
     [50069, 'hour', 'TINYINT', ['DATETIME'], 'TimeFunctions::hourV2'],
     [50070, 'hour', 'INT', ['DATETIME'], 'TimeFunctions::hour'],
@@ -533,7 +535,13 @@ vectorized_functions = [
     [80041, 'hll_deserialize', 'HLL', ['VARCHAR'], 'HyperloglogFunctions::hll_deserialize'],
 
     # bitmap function
-    [90010, 'to_bitmap', 'BITMAP', ['VARCHAR'], 'BitmapFunctions::to_bitmap', False],
+    [90010, 'to_bitmap', 'BITMAP', ['VARCHAR'], 'BitmapFunctions::to_bitmap<TYPE_VARCHAR>', False],
+    [90011, 'to_bitmap', 'BITMAP', ['BOOLEAN'], 'BitmapFunctions::to_bitmap<TYPE_BOOLEAN>', False],
+    [90012, 'to_bitmap', 'BITMAP', ['TINYINT'], 'BitmapFunctions::to_bitmap<TYPE_TINYINT>', False],
+    [90013, 'to_bitmap', 'BITMAP', ['SMALLINT'], 'BitmapFunctions::to_bitmap<TYPE_SMALLINT>', False],
+    [90014, 'to_bitmap', 'BITMAP', ['INT'], 'BitmapFunctions::to_bitmap<TYPE_INT>', False],
+    [90015, 'to_bitmap', 'BITMAP', ['BIGINT'], 'BitmapFunctions::to_bitmap<TYPE_BIGINT>', False],
+    [90016, 'to_bitmap', 'BITMAP', ['LARGEINT'], 'BitmapFunctions::to_bitmap<TYPE_LARGEINT>', False],
     [90020, 'bitmap_hash', 'BITMAP', ['VARCHAR'], 'BitmapFunctions::bitmap_hash', False],
     [90030, 'bitmap_count', 'BIGINT', ['BITMAP'], 'BitmapFunctions::bitmap_count'],
     [90040, 'bitmap_empty', 'BITMAP', [], 'BitmapFunctions::bitmap_empty', False],

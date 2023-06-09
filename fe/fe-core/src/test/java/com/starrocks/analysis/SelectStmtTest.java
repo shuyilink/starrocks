@@ -66,6 +66,8 @@ public class SelectStmtTest {
                 + "AGGREGATE KEY(k1, k2,k3,k4) distributed by hash(k1) buckets 3 properties('replication_num' = '1');";
         String createBaseAllStmtStr = "create table db1.baseall(k1 int) distributed by hash(k1) "
                 + "buckets 3 properties('replication_num' = '1');";
+        String createDateTblStmtStr = "create table db1.t(k1 int, dt date) "
+                + "DUPLICATE KEY(k1) distributed by hash(k1) buckets 3 properties('replication_num' = '1');";
         String createPratitionTableStr = "CREATE TABLE db1.partition_table (\n" +
                 "datekey int(11) NULL COMMENT \"datekey\",\n" +
                 "poi_id bigint(20) NULL COMMENT \"poi_id\"\n" +
@@ -81,11 +83,29 @@ public class SelectStmtTest {
                 "\"replication_num\" = \"1\"\n" +
                 ");";
 
+        String createTable1 = "CREATE TABLE `t0` (\n" +
+                "  `c0` varchar(24) NOT NULL COMMENT \"\",\n" +
+                "  `c1` decimal128(24, 5) NOT NULL COMMENT \"\",\n" +
+                "  `c2` decimal128(24, 2) NOT NULL COMMENT \"\"\n" +
+                ") ENGINE=OLAP \n" +
+                "DUPLICATE KEY(`c0`)\n" +
+                "COMMENT \"OLAP\"\n" +
+                "DISTRIBUTED BY HASH(`c0`) BUCKETS 1 \n" +
+                "PROPERTIES (\n" +
+                "\"replication_num\" = \"1\",\n" +
+                "\"in_memory\" = \"false\",\n" +
+                "\"storage_format\" = \"DEFAULT\",\n" +
+                "\"enable_persistent_index\" = \"false\",\n" +
+                "\"replicated_storage\" = \"true\",\n" +
+                "\"compression\" = \"LZ4\"\n" +
+                "); ";
         starRocksAssert = new StarRocksAssert();
         starRocksAssert.withDatabase("db1").useDatabase("db1");
         starRocksAssert.withTable(createTblStmtStr)
                 .withTable(createBaseAllStmtStr)
-                .withTable(createPratitionTableStr);
+                .withTable(createPratitionTableStr)
+                .withTable(createTable1)
+                .withTable(createDateTblStmtStr);
     }
 
     @Test
@@ -283,6 +303,44 @@ public class SelectStmtTest {
     }
 
     @Test
+    public void testGroupByCountDistinctArrayWithSkewHint() throws Exception {
+        FeConstants.runningUnitTest = true;
+        // array is not supported now
+        String sql = "select b1, count(distinct [skew] a1) as cnt from (select split('a,b,c', ',') as a1, 'aaa' as b1) t1 group by b1";
+        String s = starRocksAssert.query(sql).explainQuery();
+        Assert.assertTrue(s, s.contains("PLAN FRAGMENT 0\n" +
+                " OUTPUT EXPRS:3: expr | 4: count\n" +
+                "  PARTITION: UNPARTITIONED\n" +
+                "\n" +
+                "  RESULT SINK\n" +
+                "\n" +
+                "  5:AGGREGATE (merge finalize)\n" +
+                "  |  output: count(4: count)\n" +
+                "  |  group by: 3: expr\n" +
+                "  |  \n" +
+                "  4:AGGREGATE (update serialize)\n" +
+                "  |  STREAMING\n" +
+                "  |  output: count(2: split)\n" +
+                "  |  group by: 3: expr\n" +
+                "  |  \n" +
+                "  3:Project\n" +
+                "  |  <slot 2> : 2: split\n" +
+                "  |  <slot 3> : 'aaa'\n" +
+                "  |  \n" +
+                "  2:AGGREGATE (update serialize)\n" +
+                "  |  group by: 2: split\n" +
+                "  |  \n" +
+                "  1:Project\n" +
+                "  |  <slot 2> : split('a,b,c', ',')\n" +
+                "  |  <slot 3> : 'aaa'\n" +
+                "  |  \n" +
+                "  0:UNION\n" +
+                "     constant exprs: \n" +
+                "         NULL"));
+        FeConstants.runningUnitTest = false;
+    }
+
+    @Test
     public void testGroupByMultiColumnCountDistinctWithSkewHint() throws Exception {
         FeConstants.runningUnitTest = true;
         String sql =
@@ -367,6 +425,83 @@ public class SelectStmtTest {
 
         } finally {
             starRocksAssert.getCtx().getSessionVariable().setCboCteReuse(cboCteReuse);
+        }
+    }
+
+    @Test
+    public void testAnalyzeDecimalArithmeticExprIdempotently()
+            throws Exception {
+        {
+            String sql = "select c0, sum(c2/(1+c1)) as a, sum(c2/(1+c1)) as b from t0 group by c0;";
+            String plan = UtFrameUtils.getVerboseFragmentPlan(starRocksAssert.getCtx(), sql);
+            Assert.assertTrue(plan, plan.contains("PLAN FRAGMENT 0(F00)\n" +
+                    "  Output Exprs:1: c0 | 5: sum | 5: sum\n" +
+                    "  Input Partition: RANDOM\n" +
+                    "  RESULT SINK\n" +
+                    "\n" +
+                    "  2:AGGREGATE (update finalize)\n" +
+                    "  |  aggregate: sum[([4: expr, DECIMAL128(38,8), true]); " +
+                    "args: DECIMAL128; result: DECIMAL128(38,8); args nullable: true; " +
+                    "result nullable: true]\n" +
+                    "  |  group by: [1: c0, VARCHAR, false]\n" +
+                    "  |  cardinality: 1\n" +
+                    "  |  \n" +
+                    "  1:Project\n" +
+                    "  |  output columns:\n" +
+                    "  |  1 <-> [1: c0, VARCHAR, false]\n" +
+                    "  |  4 <-> [3: c2, DECIMAL128(24,2), false] / 1 + [2: c1, DECIMAL128(24,5), false]\n" +
+                    "  |  cardinality: 1"));
+        }
+
+        {
+            String sql = " select c0, sum(1/(1+cast(substr('1.12',1,4) as decimal(24,4)))) as a, " +
+                    "sum(1/(1+cast(substr('1.12',1,4) as decimal(24,4)))) as b from t0 group by c0;";
+            String plan = UtFrameUtils.getVerboseFragmentPlan(starRocksAssert.getCtx(), sql);
+            Assert.assertTrue(plan, plan.contains("PLAN FRAGMENT 0(F00)\n" +
+                    "  Output Exprs:1: c0 | 4: sum | 4: sum\n" +
+                    "  Input Partition: RANDOM\n" +
+                    "  RESULT SINK\n" +
+                    "\n" +
+                    "  1:AGGREGATE (update finalize)\n" +
+                    "  |  aggregate: sum[(1 / 2.12); " +
+                    "args: DECIMAL128; result: DECIMAL128(38,6); args nullable: true; result nullable: true]\n" +
+                    "  |  group by: [1: c0, VARCHAR, false]\n" +
+                    "  |  cardinality: 1"));
+        }
+
+        {
+            String sql = "select c0, sum(cast(c2 as decimal(38,19))/(1+c1)) as a, " +
+                    "sum(cast(c2 as decimal(38,19))/(1+c1)) as b from t0 group by c0;";
+            String plan = UtFrameUtils.getVerboseFragmentPlan(starRocksAssert.getCtx(), sql);
+            Assert.assertTrue(plan, plan.contains("PLAN FRAGMENT 0(F00)\n" +
+                    "  Output Exprs:1: c0 | 5: sum | 5: sum\n" +
+                    "  Input Partition: RANDOM\n" +
+                    "  RESULT SINK\n" +
+                    "\n" +
+                    "  2:AGGREGATE (update finalize)\n" +
+                    "  |  aggregate: sum[(cast([4: expr, DECIMAL128(38,19), true] as DECIMAL128(38,18))); " +
+                    "args: DECIMAL128; result: DECIMAL128(38,18); args nullable: true; result nullable: true]\n" +
+                    "  |  group by: [1: c0, VARCHAR, false]\n" +
+                    "  |  cardinality: 1\n" +
+                    "  |  \n" +
+                    "  1:Project\n" +
+                    "  |  output columns:\n" +
+                    "  |  1 <-> [1: c0, VARCHAR, false]\n" +
+                    "  |  4 <-> cast([3: c2, DECIMAL128(24,2), false] as DECIMAL128(38,19)) / 1 + " +
+                    "[2: c1, DECIMAL128(24,5), false]\n" +
+                    "  |  cardinality: 1"));
+
+        }
+    }
+
+    @Test
+    public void testSubstringConstantFolding() {
+        try {
+            String sql = "select * from db1.t where dt = \"2022-01-02\" or dt = cast(substring(\"2022-01-03\", 1, 10) as date);";
+            String plan = UtFrameUtils.getVerboseFragmentPlan(starRocksAssert.getCtx(), sql);
+            Assert.assertTrue(plan, plan.contains("dt IN ('2022-01-02', '2022-01-03')"));
+        } catch (Exception e) {
+            Assert.fail("Should not throw an exception");
         }
     }
 }

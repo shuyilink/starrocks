@@ -26,7 +26,7 @@ Note that in StarRocks some literals are used as reserved keywords by the SQL la
 
 ## Parameters
 
-### `database_name` and `label_name`
+### database_name and label_name
 
 `label_name` specifies the label of the load job.
 
@@ -36,7 +36,7 @@ Each load job has a label that is unique across the entire database. You can use
 
 For label naming conventions, see [System limits](../../../reference/System_limit.md).
 
-### `data_desc`
+### data_desc
 
 The description of a batch of data to be loaded. Each `data_desc` descriptor declares information such as the data source, ETL functions, destination StarRocks table, and destination partitions.
 
@@ -46,11 +46,14 @@ Broker Load supports loading multiple data files at a time. In one load job, you
 
 ```SQL
 DATA INFILE ("<file_path>"[, "<file_path>" ...])
-[NEGATIVE]INTO TABLE <table_name>
-[PARTITION (<partition_name>[, <partition_name> ...])]
+[NEGATIVE]
+INTO TABLE <table_name>
+[PARTITION (<partition1_name>[, <partition2_name> ...])]
+[TEMPORARY PARTITION (<temporary_partition1_name>[, <temporary_partition2_name> ...])]
+[COLUMNS TERMINATED BY "<column_separator>"]
+[ROWS TERMINATED BY "<row_separator>"]
 [FORMAT AS "CSV | Parquet | ORC"]
 [(fomat_type_options)]
-[COLUMNS TERMINATED BY "<column_separator>"]
 [(column_list)]
 [COLUMNS FROM PATH AS (<partition_field_name>[, <partition_field_name> ...])]
 [SET <k1=f1(v1)>[, <k2=f2(v2)> ...]]
@@ -101,11 +104,32 @@ DATA INFILE ("<file_path>"[, "<file_path>" ...])
 
   > **NOTE**
   >
-  > This parameter is valid only when the StarRocks table uses the Aggregate table and all its value columns are computed by the `sum` function.
+  > This parameter is valid only when the StarRocks table is an Aggregate table and all its value columns are computed by the `sum` function.
 
 - `PARTITION`
 
    Specifies the partitions into which you want to load data. By default, if you do not specify this parameter, the source data will be loaded into all partitions of the StarRocks table.
+
+- `TEMPORARY_PARTITION`
+
+  Specifies the name of the [temporary partition](../../../table_design/Temporary_partition.md) into which you want to load data. You can specify multiple temporary partitions, which must be separated by commas (,).
+
+- `COLUMNS TERMINATED BY`
+
+  Specifies the column separator used in the data file. By default, if you do not specify this parameter, this parameter defaults to `\t`, indicating tab. The column separator you specify using this parameter must be the same as the column separator that is actually used in the data file. Otherwise, the load job will fail due to inadequate data quality, and its `State` will be `CANCELLED`.
+
+  Broker Load jobs are submitted according to the MySQL protocol. StarRocks and MySQL both escape characters in the load requests. Therefore, if the column separator is an invisible character such as tab, you must add a backslash (\) preceding the column separator. For example, you must input `\\t` if the column separator is `\t`, and you must input `\\n` if the column separator is `\n`. Apache Hive™ files use `\x01` as their column separator, so you must input `\\x01` if the data file is from Hive.
+
+  > **NOTE**
+  >
+  > - For CSV data, you can use a UTF-8 string, such as a comma (,), tab, or pipe (|), whose length does not exceed 50 bytes as a text delimiter.
+  > - Null values are denoted by using `\N`. For example, a data file consists of three columns, and a record from that data file holds data in the first and third columns but no data in the second column. In this situation, you need to use `\N` in the second column to denote a null value. This means the record must be compiled as `a,\N,b` instead of `a,,b`. `a,,b` denotes that the second column of the record holds an empty string.
+
+- `ROWS TERMINATED BY`
+
+  Specifies the row separator used in the data file. By default, if you do not specify this parameter, this parameter defaults to `\n`, indicating line break. The row separator you specify using this parameter must be the same as the row separator that is actually used in the data file. Otherwise, the load job will fail due to inadequate data quality, and its `State` will be `CANCELLED`. This parameter is supported from v2.5.4 onwards.
+
+  For the usage notes about the row separator, see the usage notes for the preceding `COLUMNS TERMINATED BY` parameter.
 
 - `FORMAT AS`
 
@@ -136,17 +160,6 @@ DATA INFILE ("<file_path>"[, "<file_path>" ...])
   | enclose       | Specifies the character that is used to wrap the field values in the data file according to [RFC4180](https://www.rfc-editor.org/rfc/rfc4180) when the data file is in CSV format. Type: single-byte character. Default value: `NONE`. The most prevalent characters are single quotation mark (`'`) and double quotation mark (`"`).<br>All special characters (including row separators and column separators) wrapped by using the `enclose`-specified character are considered normal symbols. StarRocks can do more than RFC4180 as it allows you to specify any single-byte character as the `enclose`-specified character.<br>If a field value contains an `enclose`-specified character, you can use the same character to escape that `enclose`-specified character. For example, you set `enclose` to `"`, and a field value is `a "quoted" c`. In this case, you can enter the field value as `"a ""quoted"" c"` into the data file. |
   | escape        | Specifies the character that is used to escape various special characters, such as row separators, column separators, escape characters, and `enclose`-specified characters, which are then considered by StarRocks to be common characters and are parsed as part of the field values in which they reside. Type: single-byte character. Default value: `NONE`. The most prevalent character is slash (`\`), which must be written as double slashes (`\\`) in SQL statements.<br>**NOTE**<br>The character specified by `escape` is applied to both inside and outside of each pair of `enclose`-specified characters.<br>Two examples are as follows:<ul><li>When you set `enclose` to `"` and `escape` to `\`, StarRocks parses `"say \"Hello world\""` into `say "Hello world"`.</li><li>Assume that the column separator is comma (`,`). When you set `escape` to `\`, StarRocks parses `a, b\, c` into two separate field values: `a` and `b, c`.</li></ul> |
 
-- `COLUMNS TERMINATED BY`
-
-  Specifies the column separator used in the data file. By default, if you do not specify this parameter, this parameter defaults to `\t`, indicating tab. The column separator you specify must be the same as the column separator used in the data file. Otherwise, the load job fails due to inadequate data quality, and its `State` is displayed as `CANCELLED`.
-
-  Broker Load jobs are submitted according to the MySQL protocol. StarRocks and MySQL both escape characters in the load requests. Therefore, if the column separator is an invisible character such as tab, you must add a backslash (\) preceding the column separator. For example, you must input `\\t` if the column separator is `\t`, and you must input `\\n` if the column separator is `\n`. Apache Hive™ files use `\x01` as their column separator, so you must input `\\x01` if the data file is from Hive.
-
-  > **NOTE**
-  >
-  > - For CSV data, you can use a UTF-8 string, such as a comma (,), tab, or pipe (|), whose length does not exceed 50 bytes as a text delimiter.
-  > - Null values are denoted by using `\N`. For example, a data file consists of three columns, and a record from that data file holds data in the first and third columns but no data in the second column. In this situation, you need to use `\N` in the second column to denote a null value. This means the record must be compiled as `a,\N,b` instead of `a,,b`. `a,,b` denotes that the second column of the record holds an empty string.
-
 - `column_list`
 
   Specifies the column mapping between the data file and the StarRocks table. Syntax: `(<column_name>[, <column_name> ...])`. The columns declared in `column_list` are mapped by name onto the StarRocks table columns.
@@ -159,7 +172,7 @@ DATA INFILE ("<file_path>"[, "<file_path>" ...])
 
 - `COLUMNS FROM PATH AS`
 
-  Extracts the information about one or more partition fields from the file path you specify. This parameter is valid only when the file path contains partition fields. 
+  Extracts the information about one or more partition fields from the file path you specify. This parameter is valid only when the file path contains partition fields.
 
   For example, if the data file is stored in the path `/path/col_name=col_value/file1` in which `col_name` is a partition field and can be mapped onto a column of the StarRocks table, you can specify this parameter as `col_name`. As such, StarRocks extracts `col_value` values from the path and loads them into the StarRocks table column onto which `col_name` is mapped.
 
@@ -178,11 +191,11 @@ DATA INFILE ("<file_path>"[, "<file_path>" ...])
 
   Specifies the conditions based on which you want to filter the source data. StarRocks loads only the source data that meets the filter conditions specified in the WHERE clause.
 
-### `WITH BROKER`
+### WITH BROKER
 
 In v2.4 and earlier, input `WITH BROKER "<broker_name>"` to specify the broker you want to use. From v2.5 onwards, you no longer need to specify a broker, but you still need to retain the `WITH BROKER` keyword. For more information, see [Load data from HDFS or cloud storage > Background information](../../../loading/BrokerLoad.md#background-information).
 
-### `StorageCredentialParams`
+### StorageCredentialParams
 
 The authentication information used by StarRocks to access your storage system.
 
@@ -226,7 +239,7 @@ Open-source HDFS supports two authentication methods: simple authentication and 
     | kerberos_keytab                 | The save path of the Kerberos keytab file. |
     | kerberos_keytab_content         | The Base64-encoded content of the the Kerberos keytab file. You can choose to specify either `kerberos_keytab` or `kerberos_keytab_content`. |
 
-    If you have configured multiple Kerberos users, you must deploy an independent broker and in the load statement you must input `WITH BROKER "<broker_name>"` to specify the broker you want to use. Additionally, you must open the broker startup script file **start_broker.sh** and modify line 42 of the file to enable the broker to read the **krb5.conf** file. Example:
+    If you have configured multiple Kerberos users, make sure that at least one independent [broker group](../../../deployment/deploy_broker.md) is deployed, and in the load statement you must input `WITH BROKER "<broker_name>"` to specify the broker group you want to use. Additionally, you must open the broker startup script file **start_broker.sh** and modify line 42 of the file to enable the brokers to read the **krb5.conf** file. Example:
 
     ```Plain
     export JAVA_OPTS="-Dlog4j2.formatMsgNoLookups=true -Xmx1024m -Dfile.encoding=UTF-8 -Djava.security.krb5.conf=/etc/krb5.conf"
@@ -234,17 +247,24 @@ Open-source HDFS supports two authentication methods: simple authentication and 
 
     > **NOTE**
     >
-    > In the preceding example, `/etc/krb5.conf` can be replaced with your actual save path of the **krb5.conf** file. Make sure that the broker has read permissions on that file. If multiple brokers are deployed, you must modify the **start_broker.sh** file for each of these brokers and then restart the nodes that host the brokers to make the modifications take effect.
+    > - In the preceding example, `/etc/krb5.conf` can be replaced with your actual save path of the **krb5.conf** file. Make sure that the broker has read permissions on that file. If the broker group consists of multiple brokers, you must modify the **start_broker.sh** file on each broker node and then restart the broker nodes to make the modifications take effect.
+    > - You can use the [SHOW BROKER](../Administration/SHOW%20BROKER.md) statement to check for brokers that are deployed in your StarRocks cluster.
 
 - HA configuration
 
-  You can configure an HA mechanism for the NameNode of the HDFS cluster. This way, if the NameNode is switched over to another node, StarRocks can automatically identify the new node that serves as the NameNode. This includes the following two scenarios:
+  You can configure an HA mechanism for the NameNode of the HDFS cluster. This way, if the NameNode is switched over to another node, StarRocks can automatically identify the new node that serves as the NameNode. This includes the following scenarios:
 
-  - If you load data from a single HDFS cluster, you can perform broker-free loading. In this case, you need to place the `hdfs-site.xml` file to the `{deploy}/conf` paths of each FE and each BE.
+  - If you load data from a single HDFS cluster that has one Kerberos user configured, both load-based loading and load-free loading are supported.
+  
+    - To perform load-based loading, make sure that at least one independent [broker group](../../../deployment/deploy_broker.md) is deployed, and place the `hdfs-site.xml` file to the `{deploy}/conf` path on the broker node that serves the HDFS cluster. StarRocks will add the `{deploy}/conf` path to the environment variable `CLASSPATH` upon broker startup, allowing the brokers to read information about the HDFS cluster nodes.
+  
+    - To perform load-free loading, place the `hdfs-site.xml` file to the `{deploy}/conf` paths of each FE node and each BE node.
+  
+  - If you load data from a single HDFS cluster that has multiple Kerberos users configured, only broker-based loading is supported. Make sure that at least one independent [broker group](../../../deployment/deploy_broker.md) is deployed, and place the `hdfs-site.xml` file to the `{deploy}/conf` path on the broker node that serves the HDFS cluster. StarRocks will add the `{deploy}/conf` path to the environment variable `CLASSPATH` upon broker startup, allowing the brokers to read information about the HDFS cluster nodes.
 
-  - If you load data from multiple HDFS clusters, you can perform broker-based loading. In this case, take one of the following actions to enable brokers to read information about the HDFS cluster nodes:
+  - If you load data from multiple HDFS clusters (regardless of whether one or multiple Kerberos users are configured), only broker-based loading is supported. Make sure that at least one independent [broker group](../../../deployment/deploy_broker.md) is deployed for each of these HDFS clusters, and take one of the following actions to enable the brokers to read information about the HDFS cluster nodes:
 
-    - Place the `hdfs-site.xml` file to the `{deploy}/conf` path on the node that hosts the broker for each HDFS cluster. As such, StarRocks will add the `{deploy_dir}/conf/` path to the environment variable `CLASSPATH` upon broker startup, allowing the broker to read information about the nodes in that HDFS cluster.
+    - Place the `hdfs-site.xml` file to the `{deploy}/conf` path on the broker node that serves each HDFS cluster. StarRocks will add the `{deploy}/conf` path to the environment variable `CLASSPATH` upon broker startup, allowing the brokers to read information about the nodes in that HDFS cluster.
 
     - Add the following HA configuration at job creation:
 
@@ -264,6 +284,10 @@ Open-source HDFS supports two authentication methods: simple authentication and 
       | dfs.ha.namenodes.XXX               | The name of the NameNode in the HDFS cluster. If you specify multiple NameNode names, separate them with commas (`,`). `xxx` is the HDFS cluster name that you have specified in `dfs.nameservices`. |
       | dfs.namenode.rpc-address.XXX.NN    | The RPC address of the NameNode in the HDFS cluster. `NN` is the NameNode name that you have specified in `dfs.ha.namenodes.XXX`. |
       | dfs.client.failover.proxy.provider | The provider of the NameNode to which the client will connect. Default value: `org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider`. |
+
+  > **NOTE**
+  >
+  > You can use the [SHOW BROKER](../Administration/SHOW%20BROKER.md) statement to check for brokers that are deployed in your StarRocks cluster.
 
 #### AWS S3
 
@@ -511,7 +535,7 @@ If you choose Data Lake Storage Gen2 as your storage system, take one of the fol
   | azure.adls2.oauth2_client_secret   | Yes          | The value of the new client (application) secret created.    |
   | azure.adls2.oauth2_client_endpoint | Yes          | The OAuth 2.0 token endpoint (v1) of the service principal or application. |
 
-### `opt_properties`
+### opt_properties
 
 Specifies some optional parameters whose settings are applied to the entire load job. Syntax:
 
@@ -722,7 +746,6 @@ If you want to load all data from `example5.csv` into `table5` with Kerberos aut
 LOAD LABEL test_db.label5
 (
     DATA INFILE("hdfs://<hdfs_host>:<hdfs_port>/user/starrocks/data/input/example5.csv")
-    NEGATIVE
     INTO TABLE table5
     COLUMNS TERMINATED BY "\t"
 )

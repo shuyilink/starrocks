@@ -239,7 +239,7 @@ void NodeChannel::_open(int64_t index_id, RefCountClosure<PTabletWriterOpenResul
 
     // This ref is for RPC's reference
     open_closure->ref();
-    open_closure->cntl.set_timeout_ms(config::tablet_writer_open_rpc_timeout_sec * 1000);
+    open_closure->cntl.set_timeout_ms(_rpc_timeout_ms);
     if (request.ByteSizeLong() > _parent->_rpc_http_min_size) {
         TNetworkAddress brpc_addr;
         brpc_addr.hostname = _node_info->host;
@@ -1348,17 +1348,15 @@ Status OlapTableSink::send_chunk(RuntimeState* state, Chunk* chunk) {
 
             // _enable_automatic_partition is true means destination table using automatic partition
             // _has_automatic_partition is true means last send_chunk already create partition in nonblocking mode
-            // we don't need create again since it will resend last chunk
+            // we don't need to create again since it will resend last chunk
             if (_enable_automatic_partition && !_has_automatic_partition) {
                 _partition_not_exist_row_values.clear();
-                // only support single column partition now
-                _partition_not_exist_row_values.resize(1);
 
                 RETURN_IF_ERROR(_vectorized_partition->find_tablets(chunk, &_partitions, &_tablet_indexes,
                                                                     &_validate_selection, &invalid_row_index, _txn_id,
                                                                     &_partition_not_exist_row_values));
 
-                if (!_partition_not_exist_row_values[0].empty()) {
+                if (_partition_not_exist_row_values.size() > 0 && !_partition_not_exist_row_values[0].empty()) {
                     _is_automatic_partition_running.store(true, std::memory_order_release);
                     RETURN_IF_ERROR(_automatic_partition_token->submit_func([this] {
                         this->_automatic_partition_status = this->_automatic_create_partition();

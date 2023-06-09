@@ -34,6 +34,7 @@
 #include "storage/chunk_iterator.h"
 #include "storage/compaction_utils.h"
 #include "storage/del_vector.h"
+#include "storage/empty_iterator.h"
 #include "storage/merge_iterator.h"
 #include "storage/rowset/default_value_column_iterator.h"
 #include "storage/rowset/rowset_factory.h"
@@ -49,6 +50,7 @@
 #include "storage/tablet.h"
 #include "storage/tablet_meta_manager.h"
 #include "storage/types.h"
+#include "storage/union_iterator.h"
 #include "storage/update_compaction_state.h"
 #include "storage/update_manager.h"
 #include "util/defer_op.h"
@@ -870,7 +872,24 @@ void TabletUpdates::_apply_rowset_commit(const EditVersionInfo& version_info) {
     // `enable_persistent_index` of tablet maybe change by alter, we should get `enable_persistent_index` from index to
     // avoid inconsistency between persistent index file and PersistentIndexMeta
     bool enable_persistent_index = index.enable_persistent_index();
-    st = index.prepare(version);
+    size_t merge_num = 0;
+    {
+        std::lock_guard lg(_rowset_stats_lock);
+        auto iter = _rowset_stats.find(rowset_id);
+        if (iter == _rowset_stats.end()) {
+            string msg = strings::Substitute("inconsistent rowset_stats, rowset not found tablet=$0 rowsetid=$1",
+                                             _tablet.tablet_id(), rowset_id);
+            DCHECK(false) << msg;
+            LOG(ERROR) << msg;
+            _set_error(msg);
+            return;
+        } else {
+            size_t num_adds = iter->second->num_rows;
+            size_t num_dels = iter->second->num_dels;
+            merge_num = num_adds + num_dels;
+        }
+    }
+    st = index.prepare(version, merge_num);
     if (!st.ok()) {
         manager->index_cache().remove(index_entry);
         std::string msg = strings::Substitute("_apply_rowset_commit error: primary index prepare failed: $0 $1",
@@ -1530,7 +1549,7 @@ void TabletUpdates::_apply_compaction_commit(const EditVersionInfo& version_info
         _set_error(msg);
         return;
     }
-    index.prepare(version);
+    index.prepare(version, 0);
     int64_t t_load = MonotonicMillis();
     // 2. iterator new rowset's pks, update primary index, generate delvec
     size_t total_deletes = 0;
@@ -2257,6 +2276,7 @@ void TabletUpdates::get_tablet_info_extra(TTabletInfo* info) {
     int64_t min_readable_version = 0;
     int64_t version = 0;
     bool has_pending = false;
+    int64_t version_count = 0;
     vector<uint32_t> rowsets;
     {
         std::lock_guard rl(_lock);
@@ -2268,6 +2288,9 @@ void TabletUpdates::get_tablet_info_extra(TTabletInfo* info) {
             version = last->version.major();
             rowsets = last->rowsets;
             has_pending = _pending_commits.size() > 0;
+            // version count in primary key table contains two parts:
+            // 1. rowsets in newest version. 2. pending rowsets.
+            version_count = rowsets.size() + _pending_commits.size();
         }
     }
     string err_rowsets;
@@ -2293,7 +2316,7 @@ void TabletUpdates::get_tablet_info_extra(TTabletInfo* info) {
     info->__set_version(version);
     info->__set_min_readable_version(min_readable_version);
     info->__set_version_miss(has_pending);
-    info->__set_version_count(rowsets.size());
+    info->__set_version_count(version_count);
     info->__set_row_count(total_row);
     info->__set_data_size(total_size);
     info->__set_is_error_state(_error);
@@ -2739,7 +2762,7 @@ Status TabletUpdates::convert_from(const std::shared_ptr<Tablet>& base_tablet, i
         writer_context.tablet_schema = &_tablet.tablet_schema();
         writer_context.rowset_state = VISIBLE;
         writer_context.version = src_rowset->version();
-        writer_context.segments_overlap = src_rowset->rowset_meta()->segments_overlap();
+        writer_context.segments_overlap = NONOVERLAPPING;
 
         std::unique_ptr<RowsetWriter> rowset_writer;
         status = RowsetFactory::create_rowset_writer(writer_context, &rowset_writer);
@@ -2747,9 +2770,19 @@ Status TabletUpdates::convert_from(const std::shared_ptr<Tablet>& base_tablet, i
             LOG(INFO) << "build rowset writer failed";
             return Status::InternalError("build rowset writer failed");
         }
+        ChunkIteratorPtr seg_iterator;
+        if (res.value().empty()) {
+            seg_iterator = new_empty_iterator(base_schema, config::vector_chunk_size);
+        } else {
+            if (src_rowset->rowset_meta()->is_segments_overlapping()) {
+                seg_iterator = new_heap_merge_iterator(res.value());
+            } else {
+                seg_iterator = new_union_iterator(res.value());
+            }
+        }
 
         // notice: rowset's del files not linked, it's not useful
-        status = _convert_from_base_rowset(base_tablet, res.value(), chunk_changer, rowset_writer);
+        status = _convert_from_base_rowset(base_tablet, seg_iterator, chunk_changer, rowset_writer);
         if (!status.ok()) {
             LOG(WARNING) << "failed to convert from base rowset, exit alter process";
             return status;
@@ -2852,8 +2885,7 @@ Status TabletUpdates::convert_from(const std::shared_ptr<Tablet>& base_tablet, i
 }
 
 Status TabletUpdates::_convert_from_base_rowset(const std::shared_ptr<Tablet>& base_tablet,
-                                                const std::vector<ChunkIteratorPtr>& seg_iterators,
-                                                ChunkChanger* chunk_changer,
+                                                const ChunkIteratorPtr& seg_iterator, ChunkChanger* chunk_changer,
                                                 const std::unique_ptr<RowsetWriter>& rowset_writer) {
     Schema base_schema = ChunkHelper::convert_schema(base_tablet->tablet_schema());
     ChunkPtr base_chunk = ChunkHelper::new_chunk(base_schema, config::vector_chunk_size);
@@ -2863,10 +2895,7 @@ Status TabletUpdates::_convert_from_base_rowset(const std::shared_ptr<Tablet>& b
 
     std::unique_ptr<MemPool> mem_pool(new MemPool());
 
-    for (auto& seg_iterator : seg_iterators) {
-        if (seg_iterator.get() == nullptr) {
-            continue;
-        }
+    if (seg_iterator.get() != nullptr) {
         while (true) {
             base_chunk->reset();
             new_chunk->reset();

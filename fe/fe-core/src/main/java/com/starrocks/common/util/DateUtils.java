@@ -16,9 +16,12 @@ package com.starrocks.common.util;
 
 import com.starrocks.common.AnalysisException;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.SignStyle;
@@ -62,6 +65,7 @@ public class DateUtils {
             DateUtils.unixDatetimeFormatBuilder("%Y").toFormatter();
     public static final DateTimeFormatter MONTH_FORMATTER_UNIX =
             DateUtils.unixDatetimeFormatBuilder("%Y%m").toFormatter();
+
     public static DateTimeFormatter probeFormat(String dateTimeStr) throws AnalysisException {
         if (dateTimeStr.length() == 8) {
             return DateUtils.DATEKEY_FORMATTER;
@@ -69,9 +73,16 @@ public class DateUtils {
             return DateUtils.DATE_FORMATTER_UNIX;
         } else if (dateTimeStr.length() == 19) {
             return DateUtils.DATE_TIME_FORMATTER_UNIX;
+        } else if (dateTimeStr.length() == 26) {
+            return DateUtils.DATE_TIME_MS_FORMATTER_UNIX;
         } else {
             throw new AnalysisException("can not probe datetime format:" + dateTimeStr);
         }
+    }
+
+    public static String formatTimeStampInSeconds(long timestampInSeconds, ZoneId timeZoneId) {
+        ZonedDateTime createTime = Instant.ofEpochMilli(timestampInSeconds * 1000).atZone(timeZoneId);
+        return DATE_TIME_FORMATTER_UNIX.format(createTime);
     }
 
     /*
@@ -85,6 +96,11 @@ public class DateUtils {
         } else {
             return LocalDateTime.of(LocalDate.from(temporal), LocalTime.of(0, 0, 0));
         }
+    }
+
+    public static LocalDateTime parseDatTimeString(String datetime) throws AnalysisException {
+        DateTimeFormatter dateTimeFormatter = probeFormat(datetime);
+        return parseStringWithDefaultHSM(datetime, dateTimeFormatter);
     }
 
     public static DateTimeFormatterBuilder unixDatetimeFormatBuilder(String pattern) {

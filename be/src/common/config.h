@@ -210,7 +210,6 @@ CONF_String(local_library_dir, "${UDF_RUNTIME_DIR}");
 CONF_mInt32(scanner_thread_pool_thread_num, "48");
 // Number of olap/external scanner thread pool size.
 CONF_Int32(scanner_thread_pool_queue_size, "102400");
-CONF_mDouble(scan_use_query_mem_ratio, "0.25");
 CONF_Int32(udf_thread_pool_size, "1");
 // Port on which to run StarRocks test backend.
 CONF_Int32(port, "20001");
@@ -746,6 +745,8 @@ CONF_Int32(connector_io_tasks_adjust_interval_ms, "50");
 CONF_Int32(connector_io_tasks_adjust_step, "1");
 CONF_Int32(connector_io_tasks_adjust_smooth, "4");
 CONF_Int32(connector_io_tasks_slow_io_latency_ms, "50");
+CONF_mDouble(scan_use_query_mem_ratio, "0.25");
+CONF_Double(connector_scan_use_query_mem_ratio, "0.3");
 
 // Enable output trace logs in aws-sdk-cpp for diagnosis purpose.
 // Once logging is enabled in your application, the SDK will generate log files in your current working directory
@@ -805,7 +806,7 @@ CONF_Int32(starlet_cache_dir_allocate_policy, "0");
 CONF_Int32(starlet_fs_stream_buffer_size_bytes, "131072");
 #endif
 
-CONF_Int64(lake_metadata_cache_limit, /*2GB=*/"2147483648");
+CONF_mInt64(lake_metadata_cache_limit, /*2GB=*/"2147483648");
 CONF_mBool(lake_print_delete_log, "true");
 CONF_mInt64(lake_gc_metadata_max_versions, "10");
 CONF_mInt64(lake_gc_metadata_check_interval, /*30 minutes=*/"1800");
@@ -815,9 +816,11 @@ CONF_mInt64(lake_gc_segment_check_interval, /*60 minutes=*/"3600");
 CONF_mInt64(lake_gc_segment_expire_seconds, /*3 days=*/"259200");
 CONF_mBool(lake_compaction_check_txn_log_first, "false");
 CONF_mInt64(experimental_lake_segment_gc_max_retries, "3");
-CONF_mBool(experimental_lake_enable_fast_gc, "false");
+CONF_mBool(experimental_lake_enable_fast_gc, "true");
 // Used to ensure service availability in extreme situations by sacrificing a certain degree of correctness
 CONF_mBool(experimental_lake_ignore_lost_segment, "false");
+CONF_mBool(lake_enable_aggressive_gc, "true");
+CONF_mBool(lake_aggressive_gc_high_priority, "false");
 
 CONF_mBool(dependency_librdkafka_debug_enable, "false");
 
@@ -902,7 +905,10 @@ CONF_String(block_cache_engine, "starcache");
 CONF_mInt64(l0_l1_merge_ratio, "10");
 CONF_mInt64(l0_max_file_size, "209715200"); // 200MB
 CONF_mInt64(l0_max_mem_usage, "67108864");  // 64MB
+// if l0_mem_size exceeds this value, l0 need snapshot
+CONF_mInt64(l0_snapshot_size, "16777216"); // 16MB
 CONF_mInt64(max_tmp_l1_num, "10");
+CONF_mBool(enable_parallel_get_and_bf, "true");
 
 // Used by query cache, cache entries are evicted when it exceeds its capacity(500MB in default)
 CONF_Int64(query_cache_capacity, "536870912");
@@ -948,4 +954,6 @@ CONF_mInt64(load_tablet_timeout_seconds, "30");
 
 CONF_mBool(enable_pk_value_column_zonemap, "true");
 
+// Max size of key columns size of primary key table, default value is 128 bytes
+CONF_mInt32(primary_key_limit_size, "128");
 } // namespace starrocks::config

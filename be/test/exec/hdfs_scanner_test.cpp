@@ -1104,7 +1104,7 @@ TEST_F(HdfsScannerTest, TestZeroSizeStream) {
                              {"col_date", TypeDescriptor::from_logical_type(LogicalType::TYPE_DATE)},
                              {"col_timestamp", TypeDescriptor::from_logical_type(LogicalType::TYPE_DATETIME)},
                              {"col_string", TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR)},
-                             {"col_binary", TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR)},
+                             {"col_binary", TypeDescriptor::from_logical_type(LogicalType::TYPE_VARBINARY)},
                              {""}};
 
     const std::string input_orc_file = "./be/test/exec/test_data/orc_scanner/orc_zero_size_stream.orc";
@@ -1987,6 +1987,51 @@ TEST_F(HdfsScannerTest, TestParquetDictTwoPage) {
     EXPECT_TRUE(status.ok());
     READ_SCANNER_ROWS(scanner, 50);
     EXPECT_EQ(scanner->raw_rows_read(), 200);
+    scanner->close(_runtime_state);
+}
+
+// Test min-max logic when parquet file contains complex types
+TEST_F(HdfsScannerTest, TestMinMaxFilterWhenContainsComplexTypes) {
+    SlotDesc parquet_descs[] = {{"col82", TypeDescriptor::from_logical_type(LogicalType::TYPE_INT)}, {""}};
+
+    const std::string parquet_file = "./be/test/exec/test_data/parquet_data/min-max-complex-types.parquet";
+
+    auto scanner = std::make_shared<HdfsParquetScanner>();
+    auto* range = _create_scan_range(parquet_file, 0, 0);
+    auto* tuple_desc = _create_tuple_desc(parquet_descs);
+    auto* param = _create_param(parquet_file, range, tuple_desc);
+
+    param->min_max_tuple_desc = tuple_desc;
+    const TupleDescriptor* min_max_tuple_desc = param->min_max_tuple_desc;
+
+    {
+        std::vector<TExprNode> nodes;
+        TExprNode lit_node = create_int_literal_node(TPrimitiveType::INT, 82);
+        push_binary_pred_texpr_node(nodes, TExprOpcode::GE, min_max_tuple_desc->slots()[0], TPrimitiveType::INT,
+                                    lit_node);
+        ExprContext* ctx = create_expr_context(&_pool, nodes);
+        param->min_max_conjunct_ctxs.push_back(ctx);
+        param->conjunct_ctxs.push_back(ctx);
+    }
+    {
+        std::vector<TExprNode> nodes;
+        TExprNode lit_node = create_int_literal_node(TPrimitiveType::INT, 82);
+        push_binary_pred_texpr_node(nodes, TExprOpcode::LE, min_max_tuple_desc->slots()[0], TPrimitiveType::INT,
+                                    lit_node);
+        ExprContext* ctx = create_expr_context(&_pool, nodes);
+        param->min_max_conjunct_ctxs.push_back(ctx);
+        param->conjunct_ctxs.push_back(ctx);
+    }
+
+    Expr::prepare(param->min_max_conjunct_ctxs, _runtime_state);
+    Expr::open(param->min_max_conjunct_ctxs, _runtime_state);
+
+    Status status = scanner->init(_runtime_state, *param);
+    EXPECT_TRUE(status.ok());
+    status = scanner->open(_runtime_state);
+    EXPECT_TRUE(status.ok());
+    READ_SCANNER_ROWS(scanner, 0);
+    EXPECT_EQ(scanner->raw_rows_read(), 0);
     scanner->close(_runtime_state);
 }
 

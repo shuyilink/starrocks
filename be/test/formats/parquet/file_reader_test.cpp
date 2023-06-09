@@ -203,6 +203,8 @@ protected:
 
     std::string _file_array_map_path = "./be/test/exec/test_data/parquet_scanner/hudi_array_map.parquet";
 
+    std::string _file_binary_path = "./be/test/exec/test_data/parquet_scanner/file_reader_test_binary.parquet";
+
     std::shared_ptr<RowDescriptor> _row_desc = nullptr;
     RuntimeState* _runtime_state = nullptr;
     ObjectPool _pool;
@@ -1580,6 +1582,45 @@ TEST_F(FileReaderTest, TestReadStructNull) {
               chunk->debug_row(3));
 }
 
+TEST_F(FileReaderTest, TestReadBinary) {
+    auto file = _create_file(_file_binary_path);
+    auto file_reader = std::make_shared<FileReader>(config::vector_chunk_size, file.get(),
+                                                    std::filesystem::file_size(_file_binary_path));
+
+    // --------------init context---------------
+    auto ctx = _create_scan_context();
+    ctx->case_sensitive = false;
+
+    TypeDescriptor k1 = TypeDescriptor::from_logical_type(LogicalType::TYPE_INT);
+    TypeDescriptor k2 = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARBINARY);
+
+    SlotDesc slot_descs[] = {{"k1", k1}, {"k2", k2}, {""}};
+
+    ctx->tuple_desc = create_tuple_descriptor(_runtime_state, &_pool, slot_descs);
+    make_column_info_vector(ctx->tuple_desc, &ctx->materialized_columns);
+    ctx->scan_ranges.emplace_back(_create_scan_range(_file_binary_path));
+    // --------------finish init context---------------
+
+    Status status = file_reader->init(ctx);
+    if (!status.ok()) {
+        std::cout << status.get_error_msg() << std::endl;
+    }
+    ASSERT_TRUE(status.ok());
+
+    EXPECT_EQ(file_reader->_row_group_readers.size(), 1);
+
+    auto chunk = std::make_shared<Chunk>();
+    chunk->append_column(ColumnHelper::create_column(k1, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(k2, true), chunk->num_columns());
+
+    status = file_reader->get_next(&chunk);
+    ASSERT_TRUE(status.ok());
+    ASSERT_EQ(1, chunk->num_rows());
+
+    std::string s = chunk->debug_row(0);
+    EXPECT_EQ("[6, '\017']", chunk->debug_row(0));
+}
+
 TEST_F(FileReaderTest, TestReadMapColumnWithPartialMaterialize) {
     auto file = _create_file(_file_map_path);
     auto file_reader = std::make_shared<FileReader>(config::vector_chunk_size, file.get(),
@@ -1821,7 +1862,7 @@ TEST_F(FileReaderTest, TestReadArrayMap) {
     TypeDescriptor type_string = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
 
     TypeDescriptor type_map(LogicalType::TYPE_MAP);
-    type_map.children.emplace_back(TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR));
+    type_map.children.emplace_back(TypeDescriptor::from_logical_type(LogicalType::TYPE_VARBINARY));
     type_map.children.emplace_back(TypeDescriptor::from_logical_type(LogicalType::TYPE_INT));
 
     TypeDescriptor type_array_map(LogicalType::TYPE_ARRAY);
@@ -1892,7 +1933,7 @@ TEST_F(FileReaderTest, TestStructArrayNull) {
         TypeDescriptor type_array_struct = TypeDescriptor::from_logical_type(LogicalType::TYPE_STRUCT);
         type_array_struct.children.emplace_back(TypeDescriptor::from_logical_type(LogicalType::TYPE_INT));
         type_array_struct.field_names.emplace_back("c");
-        type_array_struct.children.emplace_back(TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR));
+        type_array_struct.children.emplace_back(TypeDescriptor::from_logical_type(LogicalType::TYPE_VARBINARY));
         type_array_struct.field_names.emplace_back("d");
 
         type_array.children.emplace_back(type_array_struct);
@@ -2057,7 +2098,7 @@ TEST_F(FileReaderTest, TestComplexTypeNotNull) {
     TypeDescriptor type_array_struct = TypeDescriptor::from_logical_type(LogicalType::TYPE_STRUCT);
     type_array_struct.children.emplace_back(TypeDescriptor::from_logical_type(LogicalType::TYPE_INT));
     type_array_struct.field_names.emplace_back("c");
-    type_array_struct.children.emplace_back(TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR));
+    type_array_struct.children.emplace_back(TypeDescriptor::from_logical_type(LogicalType::TYPE_VARBINARY));
     type_array_struct.field_names.emplace_back("d");
 
     type_array.children.emplace_back(type_array_struct);
@@ -2329,6 +2370,95 @@ TEST_F(FileReaderTest, TestLateMaterializationAboutOptionalComplexType) {
     }
 
     EXPECT_EQ(1, total_row_nums);
+}
+
+TEST_F(FileReaderTest, CheckDictOutofBouds) {
+    const std::string filepath = "./be/test/exec/test_data/parquet_scanner/type_mismatch_decode_min_max.parquet";
+    auto file = _create_file(filepath);
+    auto file_reader =
+            std::make_shared<FileReader>(config::vector_chunk_size, file.get(), std::filesystem::file_size(filepath));
+
+    // --------------init context---------------
+    auto ctx = _create_scan_context();
+
+    TypeDescriptor type_vin = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_log_domain = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_file_name = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_is_collection = TypeDescriptor::from_logical_type(LogicalType::TYPE_INT);
+    TypeDescriptor type_is_center = TypeDescriptor::from_logical_type(LogicalType::TYPE_INT);
+    TypeDescriptor type_is_cloud = TypeDescriptor::from_logical_type(LogicalType::TYPE_INT);
+    TypeDescriptor type_collection_time = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_center_time = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_cloud_time = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_error_collection_tips = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_error_center_tips = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_error_cloud_tips = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_error_collection_time = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_error_center_time = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_error_cloud_time = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_original_time = TypeDescriptor::from_logical_type(LogicalType::TYPE_VARCHAR);
+    TypeDescriptor type_is_original = TypeDescriptor::from_logical_type(LogicalType::TYPE_INT);
+
+    SlotDesc slot_descs[] = {
+            {"vin", type_vin},
+            {"type_log_domain", type_log_domain},
+            {"file_name", type_file_name},
+            {"is_collection", type_is_collection},
+            {"is_center", type_is_center},
+            {"is_cloud", type_is_cloud},
+            {"collection_time", type_collection_time},
+            {"center_time", type_center_time},
+            {"cloud_time", type_cloud_time},
+            {"error_collection_tips", type_error_collection_tips},
+            {"error_center_tips", type_error_center_tips},
+            {"error_cloud_tips", type_error_cloud_tips},
+            {"error_collection_time", type_error_collection_time},
+            {"error_center_time", type_error_center_time},
+            {"error_cloud_time", type_error_cloud_time},
+            {"original_time", type_original_time},
+            {"is_original", type_is_original},
+            {""},
+    };
+
+    ctx->tuple_desc = create_tuple_descriptor(_runtime_state, &_pool, slot_descs);
+    make_column_info_vector(ctx->tuple_desc, &ctx->materialized_columns);
+    ctx->scan_ranges.emplace_back(_create_scan_range(filepath));
+
+    // --------------finish init context---------------
+
+    Status status = file_reader->init(ctx);
+    ASSERT_TRUE(status.ok());
+
+    auto chunk = std::make_shared<Chunk>();
+    chunk->append_column(ColumnHelper::create_column(type_vin, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_log_domain, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_file_name, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_is_collection, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_is_center, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_is_cloud, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_collection_time, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_center_time, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_cloud_time, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_error_collection_tips, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_error_center_tips, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_error_cloud_tips, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_error_collection_time, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_error_center_time, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_error_cloud_time, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_original_time, true), chunk->num_columns());
+    chunk->append_column(ColumnHelper::create_column(type_is_original, true), chunk->num_columns());
+
+    size_t total_row_nums = 0;
+    while (!status.is_end_of_file()) {
+        chunk->reset();
+        status = file_reader->get_next(&chunk);
+        if (!status.ok()) {
+            break;
+        }
+        chunk->check_or_die();
+        total_row_nums += chunk->num_rows();
+    }
+    EXPECT_EQ(0, total_row_nums);
 }
 
 } // namespace starrocks::parquet
