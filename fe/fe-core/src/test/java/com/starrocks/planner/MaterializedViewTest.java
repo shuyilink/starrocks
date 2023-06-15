@@ -2659,8 +2659,6 @@ public class MaterializedViewTest extends MaterializedViewTestBase {
                     " left join locations on emps.locationid = locations.locationid where emps.deptno < 5 or emps.deptno > 20");
         }
     }
-<<<<<<< HEAD
-=======
 
     @Test
     public void testTimeSliceRewrite() throws Exception {
@@ -2709,5 +2707,4 @@ public class MaterializedViewTest extends MaterializedViewTestBase {
         }
 
     }
->>>>>>> 050a69fac ([Enhancement] count distinct mv can rewrite when missing group by has equal predicate (#25006))
 }
