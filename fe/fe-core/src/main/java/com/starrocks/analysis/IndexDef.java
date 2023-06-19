@@ -29,14 +29,17 @@ import com.starrocks.sql.analyzer.SemanticException;
 
 import java.util.List;
 import java.util.TreeSet;
+import java.util.Map;
+import java.util.HashMap;
 
 public class IndexDef {
     private String indexName;
     private List<String> columns;
     private IndexType indexType;
     private String comment;
+    private Map<String, String> properties;
 
-    public IndexDef(String indexName, List<String> columns, IndexType indexType, String comment) {
+    public IndexDef(String indexName, List<String> columns, IndexType indexType, Map<String, String> properties, String comment) {
         this.indexName = indexName;
         this.columns = columns;
         if (indexType == null) {
@@ -49,10 +52,15 @@ public class IndexDef {
         } else {
             this.comment = comment;
         }
+        if (properties == null) {
+            this.properties = new HashMap<String, String>();
+        } else {
+            this.properties = properties;
+        }
     }
 
     public void analyze() {
-        if (indexType == IndexDef.IndexType.BITMAP) {
+        if (indexType == IndexDef.IndexType.BITMAP || indexType == IndexDef.IndexType.INVERTEXD) {
             if (columns == null || columns.size() != 1) {
                 throw new SemanticException("bitmap index can only apply to a single column.");
             }
@@ -121,10 +129,14 @@ public class IndexDef {
         return comment;
     }
 
+    public Map<String, String> getProperties() {
+        return properties;
+    }
+
     // new planner framework use SemanticException instead of AnalysisException, this code will remove in future
     @Deprecated
     public void checkColumn(Column column, KeysType keysType) {
-        if (indexType == IndexType.BITMAP) {
+        if (indexType == IndexType.BITMAP || indexType == IndexType.INVERTEXD) {
             String indexColName = column.getName();
             PrimitiveType colType = column.getPrimitiveType();
             if (!(colType.isDateType() ||
@@ -143,5 +155,6 @@ public class IndexDef {
 
     public enum IndexType {
         BITMAP,
+        INVERTEXD;
     }
 }

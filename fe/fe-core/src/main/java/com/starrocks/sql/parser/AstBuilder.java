@@ -606,6 +606,11 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
         return new KeysDesc(keysType, columnList.stream().map(Identifier::getValue).collect(toList()));
     }
 
+    private IndexDef.IndexType getIndexType(StarRocksParser.IndexTypeContext context) {
+        String indexTypeStr = ((Identifier) visit(context.identifier())).getValue();
+        return IndexDef.IndexType.valueOf(indexTypeStr);
+    }
+
     private List<IndexDef> getIndexDefs(List<StarRocksParser.IndexDescContext> indexDesc) {
         List<IndexDef> indexDefList = new ArrayList<>();
         for (StarRocksParser.IndexDescContext context : indexDesc) {
@@ -613,9 +618,12 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
             List<Identifier> columnList = visit(context.identifierList().identifier(), Identifier.class);
             String comment =
                     context.comment() != null ? ((StringLiteral) visit(context.comment())).getStringValue() : null;
-            final IndexDef indexDef =
-                    new IndexDef(indexName, columnList.stream().map(Identifier::getValue).collect(toList()),
-                            IndexDef.IndexType.BITMAP, comment);
+
+            IndexDef.IndexType indexType = getIndexType(context.indexType());
+            Map<String, String> properties = getProperties(context.properties());
+            final IndexDef indexDef = new IndexDef(indexName,
+                    columnList.stream().map(Identifier::getValue).collect(toList()),
+                    indexType, properties, comment);
             indexDefList.add(indexDef);
         }
         return indexDefList;
@@ -983,12 +991,11 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
         if (context.comment() != null) {
             comment = ((StringLiteral) visit(context.comment())).getStringValue();
         }
-
+        IndexDef.IndexType indexType = getIndexType(context.indexType());
+        Map<String, String> properties = getProperties(context.properties());
         IndexDef indexDef = new IndexDef(indexName,
                 columnList.stream().map(Identifier::getValue).collect(toList()),
-                IndexDef.IndexType.BITMAP,
-                comment);
-
+                indexType, properties, comment);
         CreateIndexClause createIndexClause = new CreateIndexClause(null, indexDef, false);
 
         QualifiedName qualifiedName = getQualifiedName(context.qualifiedName());
@@ -2948,10 +2955,11 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
             comment = ((StringLiteral) visit(context.comment())).getStringValue();
         }
 
+        IndexDef.IndexType indexType = getIndexType(context.indexType());
+        Map<String, String> properties = getProperties(context.properties());
         IndexDef indexDef = new IndexDef(indexName,
                 columnList.stream().map(Identifier::getValue).collect(toList()),
-                IndexDef.IndexType.BITMAP,
-                comment);
+                indexType, properties, comment);
 
         return new CreateIndexClause(null, indexDef, true);
     }

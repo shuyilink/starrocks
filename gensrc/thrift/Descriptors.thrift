@@ -138,7 +138,8 @@ enum THdfsCompression {
 }
 
 enum TIndexType {
-  BITMAP
+  BITMAP,
+  INVERTEXD
 }
 
 // Mapping from names defined by Avro to the enum.
