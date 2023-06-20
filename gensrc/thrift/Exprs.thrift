@@ -67,6 +67,8 @@ enum TExprNodeType {
   SUBFIELD_EXPR,
   RUNTIME_FILTER_MIN_MAX_EXPR,
   MAP_ELEMENT_EXPR,
+
+  MATCH_PRED,
 }
 
 //enum TAggregationOp {
@@ -169,6 +171,11 @@ struct TFunctionCallExpr {
   2: optional i32 vararg_start_idx
 }
 
+struct TMatchPredicate {
+  1: required string parser_type;
+  2: required string parser_mode;
+}
+
 // This is essentially a union over the subclasses of Expr.
 struct TExprNode {
   1: required TExprNodeType node_type
@@ -216,6 +223,7 @@ struct TExprNode {
   52: optional bool is_nullable
   53: optional Types.TTypeDesc child_type_desc
   54: optional bool is_monotonic
+  55: optional TMatchPredicate match_predicate
 }
 
 // A flattened representation of a tree of Expr nodes, obtained by depth-first

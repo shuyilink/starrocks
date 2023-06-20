@@ -46,6 +46,10 @@ public abstract class ScalarOperatorVisitor<R, C> {
         return visit(predicate, context);
     }
 
+    public R visitMatchPredicate(MatchPredicateOperator predicate, C context) { 
+        return visit(predicate, context);
+    }
+
     public R visitBinaryPredicate(BinaryPredicateOperator predicate, C context) {
         return visit(predicate, context);
     }

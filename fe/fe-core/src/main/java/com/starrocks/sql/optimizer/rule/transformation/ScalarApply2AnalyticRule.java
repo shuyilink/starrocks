@@ -696,6 +696,12 @@ public class ScalarApply2AnalyticRule extends TransformationRule {
         }
 
         @Override
+        public Boolean visitMatchPredicate(MatchPredicateOperator predicate, ScalarOperator peer) { 
+            // TODO
+            return true;
+        }
+
+        @Override
         public Boolean visitBinaryPredicate(BinaryPredicateOperator predicate, ScalarOperator peer) {
             if (isClassMismatch(predicate, peer)) {
                 return false;
@@ -808,6 +814,11 @@ public class ScalarApply2AnalyticRule extends TransformationRule {
         @Override
         public ScalarOperator visitBetweenPredicate(BetweenPredicateOperator predicate, Void context) {
             return new BetweenPredicateOperator(predicate.isNotBetween(), cloneChildren(predicate));
+        }
+
+        @Override
+        public ScalarOperator visitMatchPredicate(MatchPredicateOperator predicate, Void context) { 
+            return new MatchPredicateOperator();
         }
 
         @Override

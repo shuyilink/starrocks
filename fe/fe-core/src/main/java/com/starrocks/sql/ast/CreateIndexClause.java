@@ -7,6 +7,8 @@ import com.starrocks.analysis.IndexDef;
 import com.starrocks.analysis.TableName;
 import com.starrocks.catalog.Index;
 
+import java.util.Map;
+
 public class CreateIndexClause extends AlterTableClause {
     // index definition class
     private final IndexDef indexDef;
@@ -28,6 +30,11 @@ public class CreateIndexClause extends AlterTableClause {
 
     public IndexDef getIndexDef() {
         return indexDef;
+    }
+
+    @Override
+    public  Map<String, String> getProperties() {
+        return indexDef.getProperties();
     }
 
     @Override

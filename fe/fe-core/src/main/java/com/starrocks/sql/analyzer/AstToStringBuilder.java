@@ -600,6 +600,11 @@ public class AstToStringBuilder {
         }
 
         @Override
+        public String visitMatchPredicate(MatchPredicate node, Void context) { 
+            return node.toSqlImpl();
+        }
+
+        @Override
         public String visitBinaryPredicate(BinaryPredicate node, Void context) {
             return printWithParentheses(node.getChild(0)) +
                     " " + node.getOp() + " " +

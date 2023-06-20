@@ -404,6 +404,11 @@ public final class SqlToScalarOperatorTranslator {
         }
 
         @Override
+        public ScalarOperator visitMatchPredicate(MatchPredicate node, Context context) throws SemanticException { 
+            return MatchPredicateOperator();
+        }
+
+        @Override
         public ScalarOperator visitBinaryPredicate(BinaryPredicate node, Context context) {
             switch (node.getOp()) {
                 case EQ:

@@ -434,6 +434,12 @@ public class ExpressionAnalyzer {
         }
 
         @Override
+        public Void visitMatchPredicate(MatchPredicate node, Scope scope) { 
+            // TODO
+            return null;
+        }
+
+        @Override
         public Void visitBinaryPredicate(BinaryPredicate node, Scope scope) {
             Type type1 = node.getChild(0).getType();
             Type type2 = node.getChild(1).getType();

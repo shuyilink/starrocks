@@ -322,6 +322,10 @@ public class ScalarOperatorToExpr {
             return call;
         }
 
+        @OverContext Expr visitMatchPredicate(MatchPredicateOperator predicate, FormatterContext context) { 
+            return null;
+        }
+
         @Override
         public Expr visitExistsPredicate(ExistsPredicateOperator predicate, FormatterContext context) {
             // @FIXME: support subquery

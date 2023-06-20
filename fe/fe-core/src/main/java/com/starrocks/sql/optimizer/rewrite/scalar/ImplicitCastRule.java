@@ -108,6 +108,12 @@ public class ImplicitCastRule extends TopDownScalarOperatorRewriteRule {
         return castForBetweenAndIn(predicate);
     }
 
+    @Override 
+    public ScalarOperator visitMatchPredicate(MatchPredicateOperator predicate,
+                                              ScalarOperatorRewriteContext context) {
+         return predicate;
+    }
+
     @Override
     public ScalarOperator visitBinaryPredicate(BinaryPredicateOperator predicate,
                                                ScalarOperatorRewriteContext context) {

@@ -45,6 +45,7 @@ import com.starrocks.analysis.LargeIntLiteral;
 import com.starrocks.analysis.LikePredicate;
 import com.starrocks.analysis.LimitElement;
 import com.starrocks.analysis.LiteralExpr;
+import com.starrocks.analysis.MatchPredicate;
 import com.starrocks.analysis.NullLiteral;
 import com.starrocks.analysis.OdbcScalarFunctionCall;
 import com.starrocks.analysis.OrderByElement;
@@ -4335,6 +4336,18 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
                 (Expr) visit(context.lower),
                 (Expr) visit(context.upper),
                 isNotBetween);
+    }
+
+    @Override
+    public ParseNode visitMatchAny(StarRocksParser.MatchAnyContext context) {
+        MatchPredicate matchPredicate = new MatchPredicate(
+                MatchPredicate.Operator.MATCH_ANY,
+                (Expr) visit(context.value),
+                (Expr) visit(context.pattern));
+        if (context.NOT() != null) { 
+            return new CompoundPredicate(CompoundPredicate.Operator.NOT, matchPredicate, null);
+        }
+        return matchPredicate;
     }
 
     @Override

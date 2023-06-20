@@ -1142,6 +1142,7 @@ public class SchemaChangeHandler extends AlterHandler {
             if (properties != null) {
                 if (propertyMap.isEmpty()) {
                     propertyMap.putAll(properties);
+                    LOG.info("alter table property: " + properties);
                 } else {
                     throw new DdlException("reduplicated PROPERTIES");
                 }
@@ -1606,7 +1607,7 @@ public class SchemaChangeHandler extends AlterHandler {
             if (column != null) {
                 indexDef.checkColumn(column, olapTable.getKeysType());
             } else {
-                throw new DdlException("BITMAP column does not exist in table. invalid column: " + col);
+                throw new DdlException("index column does not exist in table. invalid column: " + col);
             }
         }
 

@@ -90,6 +90,12 @@ public class NormalizePredicateRule extends BottomUpScalarOperatorRewriteRule {
         }
     }
 
+    @Override
+    public ScalarOperator visitMatchPredicate(MatchPredicateOperator predicate,
+                                              ScalarOperatorRewriteContext context) {
+        return predicate;
+    }
+
     // Remove repeat predicate
     // example:
     //           AND
