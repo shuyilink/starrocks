@@ -20,6 +20,7 @@ import com.starrocks.sql.optimizer.operator.scalar.CompoundPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ConstantOperator;
 import com.starrocks.sql.optimizer.operator.scalar.InPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.LikePredicateOperator;
+import com.starrocks.sql.optimizer.operator.scalar.MatchPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
 import com.starrocks.sql.optimizer.rewrite.ScalarOperatorRewriteContext;
 
@@ -111,7 +112,7 @@ public class ImplicitCastRule extends TopDownScalarOperatorRewriteRule {
     @Override 
     public ScalarOperator visitMatchPredicate(MatchPredicateOperator predicate,
                                               ScalarOperatorRewriteContext context) {
-         return predicate;
+        return predicate;
     }
 
     @Override

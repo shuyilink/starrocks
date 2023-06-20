@@ -40,6 +40,7 @@ import com.starrocks.sql.optimizer.operator.scalar.ExistsPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.InPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.IsNullPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.LikePredicateOperator;
+import com.starrocks.sql.optimizer.operator.scalar.MatchPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperatorVisitor;
 import com.starrocks.sql.optimizer.rewrite.BaseScalarOperatorShuttle;
@@ -817,8 +818,9 @@ public class ScalarApply2AnalyticRule extends TransformationRule {
         }
 
         @Override
-        public ScalarOperator visitMatchPredicate(MatchPredicateOperator predicate, Void context) { 
-            return new MatchPredicateOperator();
+        public ScalarOperator visitMatchPredicate(MatchPredicateOperator predicate, Void context) {
+            // TODO
+            return predicate;
         }
 
         @Override

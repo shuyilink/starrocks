@@ -24,6 +24,7 @@ import com.starrocks.analysis.InformationFunction;
 import com.starrocks.analysis.IsNullPredicate;
 import com.starrocks.analysis.LikePredicate;
 import com.starrocks.analysis.LiteralExpr;
+import com.starrocks.analysis.MatchPredicate;
 import com.starrocks.analysis.NullLiteral;
 import com.starrocks.analysis.ParseNode;
 import com.starrocks.analysis.Predicate;
@@ -404,8 +405,9 @@ public final class SqlToScalarOperatorTranslator {
         }
 
         @Override
-        public ScalarOperator visitMatchPredicate(MatchPredicate node, Context context) throws SemanticException { 
-            return MatchPredicateOperator();
+        public ScalarOperator visitMatchPredicate(MatchPredicate node, Context context) throws SemanticException {
+            // TODO
+            return null;
         }
 
         @Override

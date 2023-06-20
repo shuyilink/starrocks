@@ -59,6 +59,7 @@ import com.starrocks.sql.optimizer.operator.scalar.InPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.IsNullPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.LambdaFunctionOperator;
 import com.starrocks.sql.optimizer.operator.scalar.LikePredicateOperator;
+import com.starrocks.sql.optimizer.operator.scalar.MatchPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.PredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperatorVisitor;
@@ -322,7 +323,8 @@ public class ScalarOperatorToExpr {
             return call;
         }
 
-        @OverContext Expr visitMatchPredicate(MatchPredicateOperator predicate, FormatterContext context) { 
+        @Override
+        public Expr visitMatchPredicate(MatchPredicateOperator predicate, FormatterContext context) {
             return null;
         }
 
