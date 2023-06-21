@@ -436,7 +436,8 @@ public class ExpressionAnalyzer {
 
         @Override
         public Void visitMatchPredicate(MatchPredicate node, Scope scope) { 
-            // TODO
+            node.setType(Type.BOOLEAN);
+            // don not check
             return null;
         }
 

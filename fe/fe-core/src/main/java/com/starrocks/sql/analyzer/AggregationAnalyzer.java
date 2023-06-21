@@ -24,6 +24,7 @@ import com.starrocks.analysis.InformationFunction;
 import com.starrocks.analysis.IsNullPredicate;
 import com.starrocks.analysis.LikePredicate;
 import com.starrocks.analysis.LiteralExpr;
+import com.starrocks.analysis.MatchPredicate;
 import com.starrocks.analysis.OrderByElement;
 import com.starrocks.analysis.ParseNode;
 import com.starrocks.analysis.SlotRef;
@@ -173,6 +174,11 @@ public class AggregationAnalyzer {
         @Override
         public Boolean visitBetweenPredicate(BetweenPredicate node, Void context) {
             return visit(node.getChild(0)) && visit(node.getChild(1)) && visit(node.getChild(2));
+        }
+
+        @Override
+        public Boolean visitMatchPredicate(MatchPredicate node, Void context) {
+            return visit(node.getChild(0)) && visit(node.getChild(1));
         }
 
         @Override

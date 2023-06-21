@@ -67,6 +67,7 @@ import com.starrocks.sql.optimizer.operator.scalar.ExistsPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.InPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.IsNullPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.LikePredicateOperator;
+import com.starrocks.sql.optimizer.operator.scalar.MatchPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperatorVisitor;
 import com.starrocks.sql.optimizer.statistics.ColumnStatistic;
@@ -719,6 +720,11 @@ public class Explain {
             sb.append("BETWEEN ");
             sb.append(predicate.getChild(1)).append(" AND ").append(predicate.getChild(2));
             return sb.toString();
+        }
+
+        @Override
+        public String visitMatchPredicate(MatchPredicateOperator predicate, Void context) {
+            return print(predicate.getChild(0)) + "Match Any" + print(predicate.getChild(1));
         }
 
         @Override

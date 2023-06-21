@@ -55,6 +55,7 @@ import com.starrocks.sql.common.StarRocksPlannerException;
 import com.starrocks.sql.optimizer.SubqueryUtils;
 import com.starrocks.sql.optimizer.base.ColumnRefFactory;
 import com.starrocks.sql.optimizer.base.ColumnRefSet;
+import com.starrocks.sql.optimizer.operator.OperatorType;
 import com.starrocks.sql.optimizer.operator.logical.LogicalApplyOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ArrayOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ArraySliceOperator;
@@ -73,6 +74,7 @@ import com.starrocks.sql.optimizer.operator.scalar.InPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.IsNullPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.LambdaFunctionOperator;
 import com.starrocks.sql.optimizer.operator.scalar.LikePredicateOperator;
+import com.starrocks.sql.optimizer.operator.scalar.MatchPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
 import com.starrocks.sql.optimizer.operator.scalar.SubfieldOperator;
 import com.starrocks.sql.optimizer.operator.scalar.SubqueryOperator;
@@ -406,8 +408,10 @@ public final class SqlToScalarOperatorTranslator {
 
         @Override
         public ScalarOperator visitMatchPredicate(MatchPredicate node, Context context) throws SemanticException {
-            // TODO
-            return null;
+            return new MatchPredicateOperator(
+                    OperatorType.MATCH_ANY,
+                    visit(node.getChild(0), context.clone(node)),
+                    visit(node.getChild(1), context.clone(node)));
         }
 
         @Override

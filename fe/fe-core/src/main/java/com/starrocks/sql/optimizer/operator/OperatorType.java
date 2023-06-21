@@ -91,6 +91,7 @@ public enum OperatorType {
     CONSTANT,
     CALL,
     BETWEEN,
+    MATCH_ANY,
     BINARY,
     COMPOUND,
     EXISTS,

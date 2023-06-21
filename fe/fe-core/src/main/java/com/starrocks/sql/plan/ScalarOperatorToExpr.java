@@ -30,6 +30,7 @@ import com.starrocks.analysis.IntLiteral;
 import com.starrocks.analysis.IsNullPredicate;
 import com.starrocks.analysis.LargeIntLiteral;
 import com.starrocks.analysis.LikePredicate;
+import com.starrocks.analysis.MatchPredicate;
 import com.starrocks.analysis.NullLiteral;
 import com.starrocks.analysis.PlaceHolderExpr;
 import com.starrocks.analysis.SlotDescriptor;
@@ -325,7 +326,11 @@ public class ScalarOperatorToExpr {
 
         @Override
         public Expr visitMatchPredicate(MatchPredicateOperator predicate, FormatterContext context) {
-            return null;
+            MatchPredicate call = new MatchPredicate(MatchPredicate.Operator.MATCH_ANY,
+                    buildExpr.build(predicate.getChild(0), context),
+                    buildExpr.build(predicate.getChild(1), context));
+            call.setType(Type.BOOLEAN);
+            return call;
         }
 
         @Override
