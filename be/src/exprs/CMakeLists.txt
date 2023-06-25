@@ -73,6 +73,7 @@ set(EXPR_FILES
   vectorized/like_predicate.cpp
   vectorized/literal.cpp
   vectorized/locate.cpp
+  vectorized/match_predicate.cpp
   vectorized/map_element_expr.cpp
   vectorized/map_functions.cpp
   vectorized/math_functions.cpp

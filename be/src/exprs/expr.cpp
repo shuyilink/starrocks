@@ -50,6 +50,7 @@
 #include "exprs/vectorized/lambda_function.h"
 #include "exprs/vectorized/literal.h"
 #include "exprs/vectorized/map_element_expr.h"
+#include "exprs/vectorized/match_predicate.h"
 #include "exprs/vectorized/placeholder_ref.h"
 #include "exprs/vectorized/subfield_expr.h"
 #include "runtime/primitive_type.h"
@@ -266,6 +267,10 @@ Status Expr::create_vectorized_expr(starrocks::ObjectPool* pool, const starrocks
         *expr = pool->add(vectorized::VectorizedBinaryPredicateFactory::from_thrift(texpr_node));
         break;
     }
+    case TExprNodeType::MATCH_PRED: {
+        *expr = pool->add(vectorized::VectorizedMatchPredicateFactory::from_thrift(texpr_node));
+        break;
+    }
     case TExprNodeType::ARITHMETIC_EXPR: {
         if (texpr_node.opcode != TExprOpcode::INVALID_OPCODE) {
             *expr = pool->add(vectorized::VectorizedArithmeticExprFactory::from_thrift(texpr_node));
@@ -375,7 +380,7 @@ Status Expr::create_vectorized_expr(starrocks::ObjectPool* pool, const starrocks
     }
     if (*expr == nullptr) {
         std::string err_msg =
-                fmt::format("Vectorized engine does not support the operator, node_type: {}", texpr_node.node_type);
+                fmt::format("Vectorized engine does not support the operator, node_type: {}", to_string(texpr_node.node_type));
         LOG(WARNING) << err_msg;
         return Status::InternalError(err_msg);
     }

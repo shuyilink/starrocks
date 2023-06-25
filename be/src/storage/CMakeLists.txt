@@ -149,6 +149,7 @@ add_library(Storage STATIC
     rowset_merger.cpp
     column_predicate_rewriter.cpp
     column_predicate_dict_conjuct.cpp
+    column_match_predicate.cpp
     compaction_task.cpp
     compaction_utils.cpp
     compaction_manager.cpp
