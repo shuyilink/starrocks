@@ -268,6 +268,12 @@ Status convert_t_schema_to_pb_schema(const TTabletSchema& tablet_schema, uint32_
                         column->set_has_bitmap_index(true);
                         break;
                     }
+                } else if (index.index_type == TIndexType::type::INVERTEXD) {
+                    DCHECK_EQ(index.columns.size(), 1);
+                    if (boost::iequals(tcolumn.column_name, index.columns[0])) {
+                        column->set_has_inverted_index(true);
+                        break;
+                    }
                 }
             }
         }

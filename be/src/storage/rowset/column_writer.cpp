@@ -37,6 +37,7 @@
 #include "storage/rowset/bloom_filter.h"
 #include "storage/rowset/bloom_filter_index_writer.h"
 #include "storage/rowset/encoding_info.h"
+#include "storage/rowset/inverted_index_writer.h"
 #include "storage/rowset/options.h"
 #include "storage/rowset/ordinal_page_index.h"
 #include "storage/rowset/page_builder.h"
@@ -270,6 +271,7 @@ StatusOr<std::unique_ptr<ColumnWriter>> ColumnWriter::create(const ColumnWriterO
             element_options.need_zone_map = false;
             element_options.need_bloom_filter = element_column.is_bf_column();
             element_options.need_bitmap_index = element_column.has_bitmap_index();
+            element_options.need_inverted_index = element_column.has_inverted_index();
             if (element_column.type() == FieldType::OLAP_FIELD_TYPE_ARRAY) {
                 if (element_options.need_bloom_filter) {
                     return Status::NotSupported("Do not support bloom filter for array type");
@@ -308,6 +310,7 @@ StatusOr<std::unique_ptr<ColumnWriter>> ColumnWriter::create(const ColumnWriterO
             array_size_options.need_zone_map = false;
             array_size_options.need_bloom_filter = false;
             array_size_options.need_bitmap_index = false;
+            array_size_options.need_inverted_index = false;
             std::unique_ptr<Field> bigint_field(FieldFactory::create_by_type(FieldType::OLAP_FIELD_TYPE_INT));
             std::unique_ptr<ScalarColumnWriter> offset_writer =
                     std::make_unique<ScalarColumnWriter>(array_size_options, std::move(bigint_field), wfile);
@@ -379,6 +382,10 @@ Status ScalarColumnWriter::init() {
         _has_index_builder = true;
         RETURN_IF_ERROR(BloomFilterIndexWriter::create(BloomFilterOptions(), get_field()->type_info(),
                                                        &_bloom_filter_index_builder));
+    }
+    if (_opts.need_inverted_index) {
+        _has_index_builder = true;
+        RETURN_IF_ERROR(InvertedIndexColumnWriter::create(get_field()->type_info(), &_inverted_index_builder));
     }
     return Status::OK();
 }

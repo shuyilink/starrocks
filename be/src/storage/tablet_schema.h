@@ -96,6 +96,9 @@ public:
     bool has_bitmap_index() const { return _check_flag(kHasBitmapIndexShift); }
     void set_has_bitmap_index(bool value) { _set_flag(kHasBitmapIndexShift, value); }
 
+    bool has_inverted_index() const { return _check_flag(kHasInvertedIndexShift); }
+    void set_has_inverted_index(bool value) { _set_flag(kHasInvertedIndexShift, value); }
+
     bool is_sort_key() const { return _check_flag(kIsSortKey); }
     void set_is_sort_key(bool value) { _set_flag(kIsSortKey, value); }
 
@@ -168,6 +171,7 @@ private:
     // we set kHasAutoIncrementShift = 6 in version 3.0. So we setset kIsSortKey = 7 to avoid
     // some compatibility issue
     constexpr static uint8_t kIsSortKey = 7;
+    constexpr static uint8_t kHasInvertedIndexShift = 8;
 
     ExtraFields* _get_or_alloc_extra_fields() {
         if (_extra_fields == nullptr) {

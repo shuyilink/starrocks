@@ -59,6 +59,7 @@ struct ColumnWriterOptions {
     bool need_zone_map = false;
     bool need_bitmap_index = false;
     bool need_bloom_filter = false;
+    bool need_inverted_index = false;
     // for char/varchar will speculate encoding in append
     // for others will decide encoding in init method
     bool need_speculate_encoding = false;
@@ -70,6 +71,7 @@ struct ColumnWriterOptions {
 
 class BitmapIndexWriter;
 class EncodingInfo;
+class InvertedIndexColumnWriter;
 class NullMapRLEBuilder;
 class NullFlagsBuilder;
 class OrdinalIndexWriter;
@@ -235,6 +237,7 @@ private:
     std::unique_ptr<ZoneMapIndexWriter> _zone_map_index_builder;
     std::unique_ptr<BitmapIndexWriter> _bitmap_index_builder;
     std::unique_ptr<BloomFilterIndexWriter> _bloom_filter_index_builder;
+    std::unique_ptr<InvertedIndexColumnWriter> _inverted_index_builder;
     // _zone_map_index_builder != NULL || _bitmap_index_builder != NULL || _bloom_filter_index_builder != NULL
     bool _has_index_builder = false;
     int64_t _element_ordinal = 0;

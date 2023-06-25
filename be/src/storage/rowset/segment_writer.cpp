@@ -149,6 +149,7 @@ Status SegmentWriter::init(const std::vector<uint32_t>& column_indexes, bool has
         }
         opts.need_bloom_filter = column.is_bf_column();
         opts.need_bitmap_index = column.has_bitmap_index();
+        opts.need_inverted_index = column.has_inverted_index();
         if (column.type() == FieldType::OLAP_FIELD_TYPE_ARRAY) {
             if (opts.need_bloom_filter) {
                 return Status::NotSupported("Do not support bloom filter for array type");

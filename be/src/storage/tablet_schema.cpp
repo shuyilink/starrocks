@@ -639,7 +639,8 @@ std::string TabletColumn::debug_string() const {
        << ",precision=" << (has_precision() ? std::to_string(_precision) : "N/A")
        << ",frac=" << (has_scale() ? std::to_string(_scale) : "N/A") << ",length=" << _length
        << ",index_length=" << _index_length << ",is_bf_column=" << is_bf_column()
-       << ",has_bitmap_index=" << has_bitmap_index() << ")";
+       << ",has_bitmap_index=" << has_bitmap_index() << ")"
+       << ",has_inverted_index=" << has_inverted_index() << ")";
     return ss.str();
 }
 
