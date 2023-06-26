@@ -1,6 +1,9 @@
 #include "storage/rowset/inverted_index_writer.h"
-#include "common/status.h"
 #include "storage/types.h"
+
+#include <CLucene.h>
+#include <CLucene/analysis/LanguageBasedAnalyzer.h>
+#include <CLucene/util/bkd/bkd_writer.h>
 
 namespace starrocks {
 

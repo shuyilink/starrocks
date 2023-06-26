@@ -62,6 +62,13 @@ set(OUTPUT_DIR "${BASE_DIR}/output")
 set(CONTRIB_DIR "${BASE_DIR}/../contrib/")
 set(CMAKE_EXPORT_COMPILECOMMANDS ON)
 
+# set clucene
+set(Roaring_ROOT "${THIRDPARTY_DIR}/include")
+set(BUILD_STATIC_LIBRARIES ON)
+set(BUILD_SHARED_LIBRARIES OFF)
+set(BUILD_CONTRIBS_LIB ON)
+set(USE_STAT64 0)
+
 if (APPLE)
     set(MAKE_TEST "ON")
 else()
@@ -138,15 +145,16 @@ link_directories(${THIRDPARTY_DIR}/lib ${THIRDPARTY_DIR}/lib64)
 set(Boost_DEBUG FALSE)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_NO_BOOST_CMAKE ON)
+set(BOOST_VERSION "1.75.0")
 set(BOOST_ROOT ${THIRDPARTY_DIR})
 # boost suppress warning is supported on cmake 3.20
 # https://cmake.org/cmake/help/latest/module/FindBoost.html
 set(Boost_NO_WARN_NEW_VERSIONS ON)
 
 if (NOT APPLE)
-    find_package(Boost 1.75.0 REQUIRED COMPONENTS thread regex program_options filesystem context)
+    find_package(Boost ${BOOST_VERSION} REQUIRED COMPONENTS thread regex program_options filesystem context)
 else()
-    find_package(Boost 1.75.0 COMPONENTS thread regex program_options filesystem context)
+    find_package(Boost ${BOOST_VERSION} COMPONENTS thread regex program_options filesystem context)
 endif()
 include_directories(${Boost_INCLUDE_DIRS})
 message(STATUS ${Boost_LIBRARIES})
@@ -271,8 +279,8 @@ set_target_properties(libs2 PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/l
 add_library(bitshuffle STATIC IMPORTED)
 set_target_properties(bitshuffle PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libbitshuffle.a)
 
-add_library(roaring STATIC IMPORTED)
-set_target_properties(roaring PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libroaring.a)
+add_library(roaring_be STATIC IMPORTED)
+set_target_properties(roaring_be PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libroaring.a)
 
 add_library(cctz STATIC IMPORTED)
 set_target_properties(cctz PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libcctz.a)
@@ -553,6 +561,14 @@ include_directories(
     BEFORE
     ${SRC_DIR}/formats/orc/apache-orc/c++/include/
 )
+
+include_directories(
+    ${CMAKE_CURRENT_BINARY_DIR}/src/clucene/src/shared
+    ${SRC_DIR}/clucene/src/core
+    ${SRC_DIR}/clucene/src/shared
+    ${SRC_DIR}/clucene/src/contribs-lib
+)
+
 include_directories(
     ${SRC_DIR}/
     ${TEST_DIR}/
@@ -636,7 +652,7 @@ set(STARROCKS_DEPENDENCIES
     rocksdb
     libs2
     snappy
-    ${Boost_LIBRARIES}
+    # ${Boost_LIBRARIES}
     thrift
     thriftnb
     glog
@@ -656,7 +672,7 @@ set(STARROCKS_DEPENDENCIES
     crypto
     leveldb
     bitshuffle
-    roaring
+    roaring_be
     brotlicommon
     brotlidec
     brotlienc
@@ -680,6 +696,10 @@ set(STARROCKS_DEPENDENCIES
     opentelemetry_resources
     opentelemetry_common
     opentelemetry_exporter_jaeger_trace
+    ic
+    clucene-core-static
+    clucene-shared-static
+    clucene-contribs-lib
     ${WL_END_GROUP}
 )
 
@@ -835,6 +855,19 @@ add_subdirectory(${SRC_DIR}/udf)
 add_subdirectory(${SRC_DIR}/tools)
 add_subdirectory(${SRC_DIR}/util)
 add_subdirectory(${SRC_DIR}/script)
+add_subdirectory(${SRC_DIR}/clucene EXCLUDE_FROM_ALL)
+
+set(clucene_options -w -Wall)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(clucene_options ${clucene_options} -Wno-c++11-narrowing)
+else ()
+    set(clucene_options ${clucene_options} -Wno-narrowing)
+endif()
+
+target_compile_options(clucene-core-static PRIVATE ${clucene_options})
+target_compile_options(clucene-shared-static PRIVATE ${clucene_options})
+target_compile_options(clucene-contribs-lib PRIVATE ${clucene_options})
+target_compile_options(ic PRIVATE ${clucene_options})
 
 if (WITH_BENCH STREQUAL "ON")
      message(STATUS "Build binary with bench")
