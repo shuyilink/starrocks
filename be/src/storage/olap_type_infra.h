@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <utility>
 #include "storage/olap_common.h"
 
 // Infra to build the type system:
@@ -42,6 +43,9 @@ namespace starrocks {
     M(OLAP_FIELD_TYPE_BOOL)            \
     M(OLAP_FIELD_TYPE_DECIMAL)         \
     M(OLAP_FIELD_TYPE_DECIMAL_V2)
+
+#define APPLY_FOR_INVERTED_INDEX_TYPE(M) \
+    APPLY_FOR_BITMAP_INDEX_TYPE(M)
 
 // Types that support bloomfilter(exclude tinyint/float/double)
 #define APPLY_FOR_BLOOMFILTER_TYPE(M) \
@@ -112,7 +116,7 @@ namespace starrocks {
 
 #define _TYPE_DISPATCH_CASE(type) \
     case type:                    \
-        return fun.template operator()<type>(args...);
+        return fun.template operator()<type>(std::forward<Args>(args)...);
 
 template <class Functor, class... Args>
 auto field_type_dispatch_basic(FieldType ftype, Functor fun, Args... args) {
@@ -149,6 +153,16 @@ auto field_type_dispatch_all_extra(FieldType ftype, Functor fun, Args... args) {
         _TYPE_DISPATCH_CASE(OLAP_FIELD_TYPE_UNSIGNED_BIGINT)
     default:
         CHECK(false) << "Unknown type: " << ftype;
+        __builtin_unreachable();
+    }
+}
+
+template <class Functor, class...Args>
+auto field_type_dispatch_inverted_index(FieldType ftype, Functor fun, Args... args) {
+    switch (ftype) {
+        APPLY_FOR_INVERTED_INDEX_TYPE(_TYPE_DISPATCH_CASE)
+    default:
+        CHECK(false) << "Unsupported type for inverted index: " << ftype;
         __builtin_unreachable();
     }
 }

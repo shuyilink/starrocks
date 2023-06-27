@@ -385,7 +385,8 @@ Status ScalarColumnWriter::init() {
     }
     if (_opts.need_inverted_index) {
         _has_index_builder = true;
-        RETURN_IF_ERROR(InvertedIndexColumnWriter::create(get_field()->type_info(), &_inverted_index_builder));
+        RETURN_IF_ERROR(InvertedIndexColumnWriter::create(
+            get_field(), _wfile->filename(), &_inverted_index_builder));
     }
     return Status::OK();
 }

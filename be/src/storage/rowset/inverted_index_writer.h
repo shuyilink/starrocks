@@ -31,15 +31,22 @@
 
 namespace starrocks {
 
+class Field;
 class TypeInfo;
 using TypeInfoPtr = std::shared_ptr<TypeInfo>;
 
 class InvertedIndexColumnWriter {
 public:
-    static Status create(const TypeInfoPtr& type_info, std::unique_ptr<InvertedIndexColumnWriter>* res);
+    static Status create(const Field* field, const std::string& segment_file_name,
+                         std::unique_ptr<InvertedIndexColumnWriter>* res);
+
+    InvertedIndexColumnWriter() = default;
+    virtual ~InvertedIndexColumnWriter() = default;
 
     InvertedIndexColumnWriter(const InvertedIndexColumnWriter &) =delete;
     InvertedIndexColumnWriter(InvertedIndexColumnWriter &&) =delete;
+
+    virtual Status init() = 0;
 };
 
 } // namespace starrocks

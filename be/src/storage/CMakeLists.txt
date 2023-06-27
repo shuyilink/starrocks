@@ -85,6 +85,8 @@ add_library(Storage STATIC
     rowset/index_page.cpp
     rowset/indexed_column_reader.cpp
     rowset/indexed_column_writer.cpp
+    rowset/inverted_index_compound_directory.cpp
+    rowset/inverted_index_desc.cpp
     rowset/inverted_index_writer.cpp
     rowset/ordinal_page_index.cpp
     rowset/page_io.cpp
@@ -128,6 +130,7 @@ add_library(Storage STATIC
     disjunctive_predicates.cpp
     empty_iterator.cpp
     merge_iterator.cpp
+    inverted_index_parser.cpp
     predicate_parser.cpp
     projection_iterator.cpp
     push_handler.cpp

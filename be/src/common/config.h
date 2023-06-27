@@ -481,6 +481,8 @@ CONF_Int32(memory_max_alignment, "16");
 
 // write buffer size before flush
 CONF_mInt64(write_buffer_size, "104857600");
+CONF_Double(inverted_index_ram_buffer_size, "32");
+CONF_mInt32(max_depth_in_bkd_tree, "512");
 
 // Following 2 configs limit the memory consumption of load process on a Backend.
 // eg: memory limit to 80% of mem limit config but up to 100GB(default)
