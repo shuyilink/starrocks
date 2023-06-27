@@ -119,7 +119,7 @@ namespace starrocks {
         return fun.template operator()<type>(std::forward<Args>(args)...);
 
 template <class Functor, class... Args>
-auto field_type_dispatch_basic(FieldType ftype, Functor fun, Args... args) {
+auto field_type_dispatch_basic(FieldType ftype, Functor&& fun, Args&&... args) {
     switch (ftype) {
         APPLY_FOR_BASIC_OLAP_FIELD_TYPE(_TYPE_DISPATCH_CASE)
     default:
@@ -130,7 +130,7 @@ auto field_type_dispatch_basic(FieldType ftype, Functor fun, Args... args) {
 
 // Types could built into columns
 template <class Functor, class... Args>
-auto field_type_dispatch_column(FieldType ftype, Functor fun, Args... args) {
+auto field_type_dispatch_column(FieldType ftype, Functor&& fun, Args&&... args) {
     switch (ftype) {
         APPLY_FOR_BASIC_OLAP_FIELD_TYPE(_TYPE_DISPATCH_CASE)
         APPLY_FOR_METRIC_FIELD_TYPE(_TYPE_DISPATCH_CASE)
@@ -142,7 +142,7 @@ auto field_type_dispatch_column(FieldType ftype, Functor fun, Args... args) {
 }
 
 template <class Functor, class... Args>
-auto field_type_dispatch_all_extra(FieldType ftype, Functor fun, Args... args) {
+auto field_type_dispatch_all_extra(FieldType ftype, Functor&& fun, Args&&... args) {
     switch (ftype) {
         APPLY_FOR_BASIC_OLAP_FIELD_TYPE(_TYPE_DISPATCH_CASE)
         APPLY_FOR_COMPLEX_OLAP_FIELD_TYPE(_TYPE_DISPATCH_CASE)
@@ -158,7 +158,7 @@ auto field_type_dispatch_all_extra(FieldType ftype, Functor fun, Args... args) {
 }
 
 template <class Functor, class...Args>
-auto field_type_dispatch_inverted_index(FieldType ftype, Functor fun, Args... args) {
+auto field_type_dispatch_inverted_index(FieldType ftype, Functor&& fun, Args&&... args) {
     switch (ftype) {
         APPLY_FOR_INVERTED_INDEX_TYPE(_TYPE_DISPATCH_CASE)
     default:
@@ -168,7 +168,7 @@ auto field_type_dispatch_inverted_index(FieldType ftype, Functor fun, Args... ar
 }
 
 template <class Functor, class... Args>
-auto field_type_dispatch_bitmap_index(FieldType ftype, Functor fun, Args... args) {
+auto field_type_dispatch_bitmap_index(FieldType ftype, Functor&& fun, Args&&... args) {
     switch (ftype) {
         APPLY_FOR_BITMAP_INDEX_TYPE(_TYPE_DISPATCH_CASE)
     default:
@@ -178,7 +178,7 @@ auto field_type_dispatch_bitmap_index(FieldType ftype, Functor fun, Args... args
 }
 
 template <class Functor, class... Args>
-auto field_type_dispatch_bloomfilter(FieldType ftype, Functor fun, Args... args) {
+auto field_type_dispatch_bloomfilter(FieldType ftype, Functor&& fun, Args&&... args) {
     // tinyint is not supported specially
     if (ftype == OLAP_FIELD_TYPE_TINYINT) {
         return Status::NotSupported("unsupported type for bloom filter: " + std::to_string(ftype));
@@ -192,7 +192,7 @@ auto field_type_dispatch_bloomfilter(FieldType ftype, Functor fun, Args... args)
 }
 
 template <class Functor, class... Args>
-auto field_type_dispatch_zonemap_index(FieldType ftype, Functor fun, Args... args) {
+auto field_type_dispatch_zonemap_index(FieldType ftype, Functor&& fun, Args&&... args) {
     switch (ftype) {
         APPLY_FOR_BASIC_OLAP_FIELD_TYPE(_TYPE_DISPATCH_CASE)
     default:
@@ -202,7 +202,7 @@ auto field_type_dispatch_zonemap_index(FieldType ftype, Functor fun, Args... arg
 }
 
 template <class Functor, class... Args>
-auto field_type_dispatch_supported(FieldType ftype, Functor fun, Args... args) {
+auto field_type_dispatch_supported(FieldType ftype, Functor&& fun, Args&&... args) {
     switch (ftype) {
         APPLY_FOR_SUPPORTED_FIELD_TYPE(_TYPE_DISPATCH_CASE)
     default:
