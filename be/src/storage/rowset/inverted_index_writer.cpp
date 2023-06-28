@@ -1,6 +1,7 @@
 #include "storage/rowset/inverted_index_writer.h"
 
 #include "common/logging.h"
+#include "common/status.h"
 #include "fs/fs.h"
 #include "gutil/integral_types.h"
 #include "storage/field.h"
@@ -13,13 +14,17 @@
 #include "storage/rowset/inverted_index_compound_directory.h"
 #include "storage/types.h"
 #include "storage/type_traits.h"
+#include "util/faststring.h"
+#include "util/slice.h"
 
 #include <CLucene.h>
 #include <CLucene/analysis/LanguageBasedAnalyzer.h>
 #include <CLucene/util/bkd/bkd_writer.h>
-#include <cstdint>
 #include <roaring/roaring.hh>
+
+#include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace starrocks {
 
@@ -29,6 +34,8 @@ int32_t MERGE_FACTOR = 100000000;
 int32_t MAX_LEAF_COUNT = 1024;
 float MAXMBSortInHeap = 512.0 * 8;
 int32_t DIMS = 1;
+
+std::string_view empty_str = "";
 
 template <FieldType type>
 constexpr bool is_slice_type() {
@@ -59,6 +66,17 @@ constexpr bool is_numeric_type() {
            field_type == FieldType::OLAP_FIELD_TYPE_BOOL;
 }
 
+#define FINALIZE_OUTPUT(x) \
+    if (x != nullptr) {    \
+        x->close();        \
+        _CLDELETE(x);      \
+    }
+#define FINALLY_FINALIZE_OUTPUT(x) \
+    try {                          \
+        FINALIZE_OUTPUT(x)         \
+    } catch (...) {                \
+    }
+
 template<FieldType field_type>
 class InvertedIndexColumnWriterImpl : public InvertedIndexColumnWriter {
 public:
@@ -71,8 +89,6 @@ public:
         _value_key_coder = get_key_coder(field_type);
         _fs = FileSystem::CreateSharedFromString(seg_filename).value();
     }
-
-    ~InvertedIndexColumnWriterImpl() =default;
 
     Status init() override {
         try {
@@ -142,12 +158,12 @@ public:
         _index_writer->setMergeFactor(MERGE_FACTOR);
         _index_writer->setUseCompoundFile(false);
 
-        int field_config = int(lucene::document::Field::STORE_NO) |
-                           int(lucene::document::Field::INDEX_NONORMS);
+        auto field_config = lucene::document::Field::STORE_NO |
+                            lucene::document::Field::INDEX_NONORMS;
         if (_parser_type == InvertedIndexParserType::PARSER_NONE) {
-            field_config |= int(lucene::document::Field::INDEX_UNTOKENIZED);
+            field_config |= lucene::document::Field::INDEX_UNTOKENIZED;
         } else {
-            field_config |= int(lucene::document::Field::INDEX_TOKENIZED);
+            field_config |= lucene::document::Field::INDEX_TOKENIZED;
         }
         _field = std::make_unique<lucene::document::Field>(_field_name.c_str(), field_config);
         // if (get_parser_phrase_support_string_from_properties(_index_meta->properties()) ==
@@ -159,10 +175,174 @@ public:
         _doc->add(*_field);
         return Status::OK();
     }
+
+    void close() {
+        if (_index_writer) {
+            _index_writer->close();
+            // if (config::enable_write_index_searcher_cache) {
+            //     // open index searcher into cache
+            //     auto index_file_name = InvertedIndexDescriptor::get_index_file_name(
+            //             _segment_file_name, _index_meta->index_id());
+            //     InvertedIndexSearcherCache::instance()->insert(_fs, _directory, index_file_name);
+            // }
+        }
+    }
+
+    void add_value(const CppType& value) {
+        std::string new_value;
+        size_t value_length = sizeof(CppType);
+
+        _value_key_coder->full_encode_ascending(&value, &new_value);
+        _bkd_writer->add((const uint8_t*)new_value.c_str(), value_length, _rid);
+
+        _rid++;
+    }
+
+    void add_numeric_values(const void* values, size_t count) {
+        auto p = reinterpret_cast<const CppType*>(values);
+        for (size_t i = 0; i < count; ++i) {
+            add_value(*p);
+            p++;
+            _row_ids_seen_for_bkd++;
+        }
+    }
+
+    Status add_values(const void* values, size_t count) override {
+        if constexpr (is_slice_type<field_type>()) {
+            RETURN_IF_UNLIKELY(_field == nullptr || _index_writer == nullptr,
+                Status::InternalError("InvertedIndex: field or index writer is null"));
+
+            auto v = (Slice*)values;
+            for (int i = 0; i < count; ++i) {
+                new_fulltext_field(v->get_data(), v->get_size());
+                _index_writer->addDocument(_doc.get());
+                ++v;
+                _rid++;
+            }
+        } else if constexpr (is_numeric_type<field_type>()) {
+            add_numeric_values(values, count);
+        }
+        return Status::OK();
+    }
+
+    void new_char_token_stream(const char* s, size_t len, lucene::document::Field* field) {
+        _char_string_reader->init(s, len, false);
+        auto stream = _analyzer->reusableTokenStream(field->name(), _char_string_reader.get());
+        field->setValue(stream);
+    }
+
+    void new_field_value(const char* s, size_t len, lucene::document::Field* field) {
+        auto field_value = lucene::util::Misc::_charToWide(s, len);
+        field->setValue(field_value, false);
+        // setValue did not duplicate value, so we don't have to delete
+        //_CLDELETE_ARRAY(field_value)
+    }
+
+    void new_fulltext_field(const char* field_value_data, size_t field_value_size) {
+        if (_parser_type == InvertedIndexParserType::PARSER_ENGLISH ||
+            _parser_type == InvertedIndexParserType::PARSER_CHINESE) {
+            new_char_token_stream(field_value_data, field_value_size, _field.get());
+        } else {
+            new_field_value(field_value_data, field_value_size, _field.get());
+        }
+    }
+
+    Status add_nulls(uint32_t count) override {
+        _null_bitmap.addRange(_rid, _rid + count);
+        _rid += count;
+        if constexpr (is_slice_type<field_type>()) {
+            RETURN_IF_UNLIKELY(_field == nullptr || _index_writer == nullptr,
+                Status::InternalError("InvertedIndex: field or index writer is null"));
+
+            for (int32_t idx = 0; idx < count; ++idx) {
+               new_fulltext_field(empty_str.data(), empty_str.size());
+               _index_writer->addDocument(_doc.get());
+            }
+        }
+        return Status::OK();
+    }
+
+    void write_null_bitmap(lucene::store::IndexOutput* null_bitmap_out,
+                           lucene::store::Directory* dir) {
+        // write null_bitmap file
+        _null_bitmap.runOptimize();
+        size_t size = _null_bitmap.getSizeInBytes(false);
+        if (size > 0) {
+            null_bitmap_out = dir->createOutput(
+                    InvertedIndexDescriptor::get_temporary_null_bitmap_file_name().c_str());
+            faststring buf;
+            buf.resize(size);
+            _null_bitmap.write(reinterpret_cast<char*>(buf.data()), false);
+            null_bitmap_out->writeBytes(reinterpret_cast<uint8_t*>(buf.data()), size);
+            FINALIZE_OUTPUT(null_bitmap_out)
+        }
+    }
+
+
+    Status finish() override {
+        lucene::store::Directory* dir = nullptr;
+        lucene::store::IndexOutput* null_bitmap_out = nullptr;
+        lucene::store::IndexOutput* data_out = nullptr;
+        lucene::store::IndexOutput* index_out = nullptr;
+        lucene::store::IndexOutput* meta_out = nullptr;
+        try {
+            // write bkd file
+            if constexpr (is_numeric_type<field_type>()) {
+                auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
+                        _seg_filename.string(), index_id);
+                dir = StarrocksCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
+                write_null_bitmap(null_bitmap_out, dir);
+                _bkd_writer->max_doc_ = _rid;
+                _bkd_writer->docs_seen_ = _row_ids_seen_for_bkd;
+                data_out = dir->createOutput(
+                        InvertedIndexDescriptor::get_temporary_bkd_index_data_file_name().c_str());
+                meta_out = dir->createOutput(
+                        InvertedIndexDescriptor::get_temporary_bkd_index_meta_file_name().c_str());
+                index_out = dir->createOutput(
+                        InvertedIndexDescriptor::get_temporary_bkd_index_file_name().c_str());
+                if (data_out != nullptr && meta_out != nullptr && index_out != nullptr) {
+                    _bkd_writer->meta_finish(meta_out, _bkd_writer->finish(data_out, index_out),
+                                             int(field_type));
+                }
+                FINALIZE_OUTPUT(meta_out)
+                FINALIZE_OUTPUT(data_out)
+                FINALIZE_OUTPUT(index_out)
+                FINALIZE_OUTPUT(dir)
+            } else if constexpr (is_slice_type<field_type>()) {
+                dir = _index_writer->getDirectory();
+                write_null_bitmap(null_bitmap_out, dir);
+                this->close();
+            }
+        } catch (CLuceneError& e) {
+            FINALLY_FINALIZE_OUTPUT(null_bitmap_out)
+            FINALLY_FINALIZE_OUTPUT(meta_out)
+            FINALLY_FINALIZE_OUTPUT(data_out)
+            FINALLY_FINALIZE_OUTPUT(index_out)
+            FINALLY_FINALIZE_OUTPUT(dir)
+            LOG(WARNING) << "InvertedIndex: fail to finish(), error:" << e.what();
+            return Status::InternalError(
+                "Inverted index writer finish error occurred");
+        }
+
+        return Status::OK();
+    }
+
+    int64_t size() const override {
+        return sizeof(InvertedIndexColumnWriterImpl<field_type>);
+    }
+
+    int64_t file_size() const override {
+        auto file_name =
+                InvertedIndexDescriptor::get_index_file_name(_seg_filename.string(), 0);
+        if (auto ret = _fs->get_file_size(file_name.c_str()); ret.ok()) {
+            return ret.value();
+        }
+        return -1;
+    }
 private:
     rowid_t _rid = 0;
     uint32_t _row_ids_seen_for_bkd = 0;
-    uint64_t _reverted_index_size;
+    int32_t index_id = 0; // TODO:
     Roaring _null_bitmap;
 
     std::wstring _field_name;

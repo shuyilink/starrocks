@@ -741,10 +741,12 @@ Status ScalarColumnWriter::append(const uint8_t* data, const uint8_t* null_flags
                     INDEX_ADD_NULLS(_zone_map_index_builder, run);
                     INDEX_ADD_NULLS(_bitmap_index_builder, run);
                     INDEX_ADD_NULLS(_bloom_filter_index_builder, run);
+                    INDEX_ADD_NULLS(_inverted_index_builder, run);
                 } else {
                     INDEX_ADD_VALUES(_zone_map_index_builder, pdata, run);
                     INDEX_ADD_VALUES(_bitmap_index_builder, pdata, run);
                     INDEX_ADD_VALUES(_bloom_filter_index_builder, pdata, run);
+                    INDEX_ADD_VALUES(_inverted_index_builder, pdata, run);
                 }
                 pdata += get_field()->size() * run;
             }
@@ -752,6 +754,7 @@ Status ScalarColumnWriter::append(const uint8_t* data, const uint8_t* null_flags
             INDEX_ADD_VALUES(_zone_map_index_builder, data, num_written);
             INDEX_ADD_VALUES(_bitmap_index_builder, data, num_written);
             INDEX_ADD_VALUES(_bloom_filter_index_builder, data, num_written);
+            INDEX_ADD_VALUES(_inverted_index_builder, data, num_written);
         }
 
         _next_rowid += num_written;

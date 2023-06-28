@@ -475,14 +475,14 @@ void StarrocksCompoundDirectory::init(FileSystemPtr _fs, const char* _path,
 
     if (lock_factory == nullptr) {
         if (disableLocks) {
-            lock_factory = CL_NS(store)::NoLockFactory::getNoLockFactory();
+            // lock_factory = CL_NS(store)::NoLockFactory::getNoLockFactory();
         } else {
             lock_factory = _CLNEW CL_NS(store)::FSLockFactory(directory.c_str(), this->filemode);
             doClearLockID = true;
         }
     }
 
-    setLockFactory(lock_factory);
+    // setLockFactory(lock_factory);
 
     if (doClearLockID) {
         lockFactory->setLockPrefix(nullptr);

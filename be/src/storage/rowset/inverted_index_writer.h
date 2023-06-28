@@ -39,6 +39,7 @@ class InvertedIndexColumnWriter {
 public:
     static Status create(const Field* field, const std::string& segment_file_name,
                          std::unique_ptr<InvertedIndexColumnWriter>* res);
+    virtual Status init() = 0;
 
     InvertedIndexColumnWriter() = default;
     virtual ~InvertedIndexColumnWriter() = default;
@@ -46,7 +47,12 @@ public:
     InvertedIndexColumnWriter(const InvertedIndexColumnWriter &) =delete;
     InvertedIndexColumnWriter(InvertedIndexColumnWriter &&) =delete;
 
-    virtual Status init() = 0;
+    virtual Status add_values(const void* values, size_t count) = 0;
+    virtual Status add_nulls(uint32_t count) = 0;
+    virtual Status finish() = 0;
+
+    virtual int64_t size() const = 0;
+    virtual int64_t file_size() const = 0;
 };
 
 } // namespace starrocks
