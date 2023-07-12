@@ -7,19 +7,13 @@
 #include <CLucene/store/RAMDirectory.h>
 #include <CLucene/util/Misc.h>
 #include <CLucene/SharedHeader.h>
-#include <stdio.h>
-#include <string.h>
-#include <wchar.h>
+#include <cstdio>
+#include <cstring>
+#include <cwchar>
 
 #include <algorithm>
 #include <memory>
 #include <utility>
-
-namespace starrocks {
-namespace io {
-class FileWriter;
-} // namespace io
-} // namespace doris
 
 #define BUFFER_LENGTH 16384
 #define CL_MAX_PATH 4096
@@ -193,7 +187,7 @@ const char* CompoundReader::getObjectName() const {
 }
 
 bool CompoundReader::list(std::vector<std::string>* names) const {
-    for (EntriesType::const_iterator i = entries->begin(); i != entries->end(); i++) {
+    for (auto i = entries->begin(); i != entries->end(); i++) {
         names->push_back(i->first);
     }
     return true;

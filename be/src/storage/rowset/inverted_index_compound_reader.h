@@ -69,7 +69,7 @@ protected:
 
 public:
     CompoundReader(lucene::store::Directory* dir, const char* name,
-                        int32_t _readBufferSize = CL_NS(store)::BufferedIndexInput::BUFFER_SIZE);
+                   int32_t _readBufferSize = CL_NS(store)::BufferedIndexInput::BUFFER_SIZE);
     ~CompoundReader() override;
     void copyFile(const char* file, int64_t file_length, uint8_t* buffer, int64_t buffer_length);
     bool list(std::vector<std::string>* names) const override;
