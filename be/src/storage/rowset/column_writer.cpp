@@ -233,6 +233,7 @@ public:
     Status write_ordinal_index() override { return _scalar_column_writer->write_ordinal_index(); };
     Status write_zone_map() override { return _scalar_column_writer->write_zone_map(); };
     Status write_bitmap_index() override { return _scalar_column_writer->write_bitmap_index(); };
+    Status write_inverted_index() override {return _scalar_column_writer->write_inverted_index(); }
     Status write_bloom_filter_index() override { return _scalar_column_writer->write_bloom_filter_index(); };
 
     ordinal_t get_next_rowid() const override { return _scalar_column_writer->get_next_rowid(); };
@@ -498,6 +499,13 @@ Status ScalarColumnWriter::write_zone_map() {
 Status ScalarColumnWriter::write_bitmap_index() {
     if (_bitmap_index_builder != nullptr) {
         return _bitmap_index_builder->finish(_wfile, _opts.meta->add_indexes());
+    }
+    return Status::OK();
+}
+
+Status ScalarColumnWriter::write_inverted_index() {
+    if (_inverted_index_builder != nullptr) {
+        return _inverted_index_builder->finish();
     }
     return Status::OK();
 }

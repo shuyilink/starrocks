@@ -30,12 +30,14 @@
 #include "column/column_helper.h"
 #include "column/datum_convert.h"
 #include "common/logging.h"
+#include "common/status.h"
 #include "storage/rowset/array_column_iterator.h"
 #include "storage/rowset/binary_dict_page.h"
 #include "storage/rowset/bitmap_index_reader.h"
 #include "storage/rowset/bloom_filter.h"
 #include "storage/rowset/bloom_filter_index_reader.h"
 #include "storage/rowset/encoding_info.h"
+#include "storage/rowset/inverted_index_reader.h"
 #include "storage/rowset/page_handle.h"
 #include "storage/rowset/page_io.h"
 #include "storage/rowset/page_pointer.h"
@@ -196,6 +198,12 @@ Status ColumnReader::new_bitmap_index_iterator(BitmapIndexIterator** iterator) {
     return Status::OK();
 }
 
+Status ColumnReader::new_inverted_index_iterator(InvertedIndexIterator** iterator) {
+    RETURN_IF_ERROR(_load_inverted_index_index());
+    RETURN_IF_ERROR(_inverted_index->new_iterator(nullptr, iterator));
+    return Status::OK();
+}
+
 Status ColumnReader::read_page(const ColumnIteratorOptions& iter_opts, const PagePointer& pp, PageHandle* handle,
                                Slice* page_body, PageFooterPB* footer) {
     iter_opts.sanity_check();
@@ -320,6 +328,27 @@ Status ColumnReader::_load_bitmap_index() {
                                  _bitmap_index_meta->SpaceUsedLong());
         _bitmap_index_meta.reset();
     }
+    return Status::OK();
+}
+
+Status ColumnReader::_load_inverted_index_index() {
+    RETURN_IF(_inverted_index == nullptr, Status::OK());
+    SCOPED_THREAD_LOCAL_CHECK_MEM_LIMIT_SETTER(false);
+
+    FieldType type = _encoding_info->type();
+    if (is_string_type(type)) {
+        // if (parser_type != InvertedIndexParserType::PARSER_NONE) {
+        //     _inverted_index = std::make_unique<FullTextIndexReader>(
+        //             _file_reader->fs(), _file_reader->path().native()));
+        // } else {
+        //     _inverted_index = std::make_unique<StringTypeInvertedIndexReader>(
+        //             _file_reader->fs(), _file_reader->path().native());
+        // }
+        _inverted_index = std::make_unique<FullTextIndexReader>(file_system(),  file_name());
+    } else if (is_numeric_type(type)) {
+        _inverted_index = std::make_unique<BkdIndexReader>(file_system(), file_name());
+    }
+
     return Status::OK();
 }
 

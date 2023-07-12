@@ -85,7 +85,9 @@ add_library(Storage STATIC
     rowset/index_page.cpp
     rowset/indexed_column_reader.cpp
     rowset/indexed_column_writer.cpp
+    rowset/inverted_index_cache.cpp
     rowset/inverted_index_compound_directory.cpp
+    rowset/inverted_index_compound_reader.cpp
     rowset/inverted_index_desc.cpp
     rowset/inverted_index_writer.cpp
     rowset/ordinal_page_index.cpp

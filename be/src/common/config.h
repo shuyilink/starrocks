@@ -481,7 +481,16 @@ CONF_Int32(memory_max_alignment, "16");
 
 // write buffer size before flush
 CONF_mInt64(write_buffer_size, "104857600");
-CONF_Double(inverted_index_ram_buffer_size, "32");
+CONF_mInt64(inverted_index_ram_buffer_size, "32");
+CONF_mInt32(inverted_index_read_buffer_size, "4096");
+CONF_mInt32(index_cache_entry_stay_time_after_lookup_s, "3600");
+CONF_Bool(enable_inverted_index_cache_check_timestamp, "true");
+CONF_mInt32(inverted_index_fd_number_limit_percent, "50");
+CONF_mInt32(index_cache_entry_no_visit_gc_time_s, "3600");
+CONF_Int32(enable_write_index_searcher_cache, "false");
+CONF_Int32(query_bkd_inverted_index_limit_percent, "10")
+// inverted index match bitmap cache size
+CONF_String(inverted_index_query_cache_limit, "10%");
 CONF_mInt32(max_depth_in_bkd_tree, "512");
 
 // Following 2 configs limit the memory consumption of load process on a Backend.

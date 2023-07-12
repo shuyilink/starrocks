@@ -53,6 +53,7 @@ class SegmentReadOptions;
 class BitmapIndexIterator;
 class ColumnReader;
 class ColumnIterator;
+class InvertedIndexIterator;
 class Segment;
 using SegmentSharedPtr = std::shared_ptr<Segment>;
 using ChunkIteratorPtr = std::shared_ptr<vectorized::ChunkIterator>;
@@ -105,6 +106,8 @@ public:
     Status new_column_iterator(uint32_t cid, ColumnIterator** iter);
 
     Status new_bitmap_index_iterator(uint32_t cid, BitmapIndexIterator** iter);
+
+    Status new_inverted_index_iterator(uint32_t cid, InvertedIndexIterator** iter);
 
     size_t num_short_keys() const { return _tablet_schema->num_short_key_columns(); }
 

@@ -225,6 +225,7 @@ Status SegmentWriter::finalize_columns(uint64_t* index_size) {
         RETURN_IF_ERROR(column_writer->write_ordinal_index());
         RETURN_IF_ERROR(column_writer->write_zone_map());
         RETURN_IF_ERROR(column_writer->write_bitmap_index());
+        RETURN_IF_ERROR(column_writer->write_inverted_index());
         RETURN_IF_ERROR(column_writer->write_bloom_filter_index());
         *index_size += _wfile->size() - index_offset;
 

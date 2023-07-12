@@ -23,6 +23,7 @@
 
 #include <netinet/in.h>
 
+#include <cstdint>
 #include <functional>
 #include <list>
 #include <map>
@@ -312,8 +313,30 @@ inline FieldType delegate_type(FieldType type) {
     }
 }
 
-inline bool is_string_type(FieldType type) {
+constexpr bool is_string_type(FieldType type) {
     return type == FieldType::OLAP_FIELD_TYPE_CHAR || type == FieldType::OLAP_FIELD_TYPE_VARCHAR;
+}
+
+constexpr bool is_numeric_type(FieldType field_type) {
+    return field_type == FieldType::OLAP_FIELD_TYPE_INT ||
+           field_type == FieldType::OLAP_FIELD_TYPE_UNSIGNED_INT ||
+           field_type == FieldType::OLAP_FIELD_TYPE_BIGINT ||
+           field_type == FieldType::OLAP_FIELD_TYPE_SMALLINT ||
+           field_type == FieldType::OLAP_FIELD_TYPE_UNSIGNED_TINYINT ||
+           field_type == FieldType::OLAP_FIELD_TYPE_UNSIGNED_SMALLINT ||
+           field_type == FieldType::OLAP_FIELD_TYPE_TINYINT ||
+           field_type == FieldType::OLAP_FIELD_TYPE_DOUBLE ||
+           field_type == FieldType::OLAP_FIELD_TYPE_FLOAT ||
+           field_type == FieldType::OLAP_FIELD_TYPE_DATE ||
+           field_type == FieldType::OLAP_FIELD_TYPE_DATE_V2 ||
+           field_type == FieldType::OLAP_FIELD_TYPE_DATETIME ||
+           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL_V2 ||
+           field_type == FieldType::OLAP_FIELD_TYPE_LARGEINT ||
+           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL ||
+           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL32 ||
+           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL64 ||
+           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL128 ||
+           field_type == FieldType::OLAP_FIELD_TYPE_BOOL;
 }
 
 inline bool is_decimalv3_field_type(FieldType type) {
@@ -463,6 +486,15 @@ struct OlapReaderStatistics {
     int64_t total_columns_data_page_count = 0;
 
     int64_t runtime_stats_filtered = 0;
+
+    int64_t inverted_index_filter_timer = 0;
+    int64_t inverted_index_query_timer = 0;
+    int64_t inverted_index_query_cache_hit = 0;
+    int64_t inverted_index_query_cache_miss = 0;
+    int64_t inverted_index_query_bitmap_copy_timer = 0;
+    int64_t inverted_index_query_bitmap_op_timer = 0;
+    int64_t inverted_index_searcher_open_timer = 0;
+    int64_t inverted_index_searcher_search_timer = 0;
 };
 
 typedef uint32_t ColumnId;

@@ -10,8 +10,9 @@
 #include "storage/olap_common.h"
 #include "storage/olap_type_infra.h"
 #include "storage/rowset/common.h"
-#include "storage/rowset/inverted_index_desc.h"
+#include "storage/rowset/inverted_index_cache.h"
 #include "storage/rowset/inverted_index_compound_directory.h"
+#include "storage/rowset/inverted_index_desc.h"
 #include "storage/types.h"
 #include "storage/type_traits.h"
 #include "util/faststring.h"
@@ -36,35 +37,6 @@ float MAXMBSortInHeap = 512.0 * 8;
 int32_t DIMS = 1;
 
 std::string_view empty_str = "";
-
-template <FieldType type>
-constexpr bool is_slice_type() {
-    return type == OLAP_FIELD_TYPE_VARCHAR || type == OLAP_FIELD_TYPE_CHAR;
-}
-
-// TODO: use macro 
-template <FieldType field_type>
-constexpr bool is_numeric_type() {
-    return field_type == FieldType::OLAP_FIELD_TYPE_INT ||
-           field_type == FieldType::OLAP_FIELD_TYPE_UNSIGNED_INT ||
-           field_type == FieldType::OLAP_FIELD_TYPE_BIGINT ||
-           field_type == FieldType::OLAP_FIELD_TYPE_SMALLINT ||
-           field_type == FieldType::OLAP_FIELD_TYPE_UNSIGNED_TINYINT ||
-           field_type == FieldType::OLAP_FIELD_TYPE_UNSIGNED_SMALLINT ||
-           field_type == FieldType::OLAP_FIELD_TYPE_TINYINT ||
-           field_type == FieldType::OLAP_FIELD_TYPE_DOUBLE ||
-           field_type == FieldType::OLAP_FIELD_TYPE_FLOAT ||
-           field_type == FieldType::OLAP_FIELD_TYPE_DATE ||
-           field_type == FieldType::OLAP_FIELD_TYPE_DATE_V2 ||
-           field_type == FieldType::OLAP_FIELD_TYPE_DATETIME ||
-           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL_V2 ||
-           field_type == FieldType::OLAP_FIELD_TYPE_LARGEINT ||
-           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL ||
-           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL32 ||
-           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL64 ||
-           field_type == FieldType::OLAP_FIELD_TYPE_DECIMAL128 ||
-           field_type == FieldType::OLAP_FIELD_TYPE_BOOL;
-}
 
 #define FINALIZE_OUTPUT(x) \
     if (x != nullptr) {    \
@@ -92,9 +64,9 @@ public:
 
     Status init() override {
         try {
-            if constexpr (is_slice_type<field_type>()) {
+            if constexpr (is_string_type(field_type)) {
                 return init_fulltext_index();
-            } else if constexpr (is_numeric_type<field_type>()) {
+            } else if constexpr (is_numeric_type(field_type)) {
                 return init_bkd_index();
             }
             return Status::Unknown("Field type not supported");
@@ -131,7 +103,7 @@ public:
 
         _char_string_reader = std::make_unique<lucene::util::SStringReader<char>>();
         _doc = std::make_unique<lucene::document::Document>();
-        _dir.reset(StarrocksCompoundDirectory::getDirectory(_fs, index_path.c_str(), true));
+        _dir.reset(CompoundDirectory::getDirectory(_fs.get(), index_path.c_str(), true));
         if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
             _analyzer = std::make_unique<lucene::analysis::standard::StandardAnalyzer>();
         } else if (_parser_type == InvertedIndexParserType::PARSER_ENGLISH) {
@@ -179,12 +151,12 @@ public:
     void close() {
         if (_index_writer) {
             _index_writer->close();
-            // if (config::enable_write_index_searcher_cache) {
-            //     // open index searcher into cache
-            //     auto index_file_name = InvertedIndexDescriptor::get_index_file_name(
-            //             _segment_file_name, _index_meta->index_id());
-            //     InvertedIndexSearcherCache::instance()->insert(_fs, _directory, index_file_name);
-            // }
+            if (config::enable_write_index_searcher_cache) {
+                // open index searcher into cache
+                auto index_file_name 
+                    = InvertedIndexDescriptor::get_index_file_name(_seg_filename, index_id);
+                InvertedIndexSearcherCache::instance()->insert(_fs.get(), _directory, index_file_name);
+            }
         }
     }
 
@@ -208,7 +180,7 @@ public:
     }
 
     Status add_values(const void* values, size_t count) override {
-        if constexpr (is_slice_type<field_type>()) {
+        if constexpr (is_string_type(field_type)) {
             RETURN_IF_UNLIKELY(_field == nullptr || _index_writer == nullptr,
                 Status::InternalError("InvertedIndex: field or index writer is null"));
 
@@ -219,7 +191,7 @@ public:
                 ++v;
                 _rid++;
             }
-        } else if constexpr (is_numeric_type<field_type>()) {
+        } else if constexpr (is_numeric_type(field_type)) {
             add_numeric_values(values, count);
         }
         return Status::OK();
@@ -250,7 +222,7 @@ public:
     Status add_nulls(uint32_t count) override {
         _null_bitmap.addRange(_rid, _rid + count);
         _rid += count;
-        if constexpr (is_slice_type<field_type>()) {
+        if constexpr (is_string_type(field_type)) {
             RETURN_IF_UNLIKELY(_field == nullptr || _index_writer == nullptr,
                 Status::InternalError("InvertedIndex: field or index writer is null"));
 
@@ -287,10 +259,10 @@ public:
         lucene::store::IndexOutput* meta_out = nullptr;
         try {
             // write bkd file
-            if constexpr (is_numeric_type<field_type>()) {
+            if constexpr (is_numeric_type(field_type)) {
                 auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
                         _seg_filename.string(), index_id);
-                dir = StarrocksCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
+                dir = CompoundDirectory::getDirectory(_fs.get(), index_path.c_str(), true);
                 write_null_bitmap(null_bitmap_out, dir);
                 _bkd_writer->max_doc_ = _rid;
                 _bkd_writer->docs_seen_ = _row_ids_seen_for_bkd;
@@ -308,7 +280,7 @@ public:
                 FINALIZE_OUTPUT(data_out)
                 FINALIZE_OUTPUT(index_out)
                 FINALIZE_OUTPUT(dir)
-            } else if constexpr (is_slice_type<field_type>()) {
+            } else if constexpr (is_string_type(field_type)) {
                 dir = _index_writer->getDirectory();
                 write_null_bitmap(null_bitmap_out, dir);
                 this->close();
@@ -359,7 +331,7 @@ private:
     std::unique_ptr<lucene::analysis::Analyzer> _analyzer;
     std::unique_ptr<lucene::util::SStringReader<char>> _char_string_reader;
     std::shared_ptr<lucene::util::bkd::bkd_writer> _bkd_writer;
-    std::unique_ptr<StarrocksCompoundDirectory> _dir;
+    std::unique_ptr<CompoundDirectory> _dir;
 };
 
 struct InvertedIndexWriterBuilder {

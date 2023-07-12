@@ -366,4 +366,10 @@ Status Segment::new_bitmap_index_iterator(uint32_t cid, BitmapIndexIterator** it
     return Status::OK();
 }
 
+Status Segment::new_inverted_index_iterator(uint32_t cid, InvertedIndexIterator **iter) {
+    RETURN_IF(_column_readers[cid] == nullptr || !_column_readers[cid]->has_inverted_index(),
+        Status::OK());
+    return _column_readers[cid]->new_inverted_index_iterator(iter);
+}
+
 } // namespace starrocks

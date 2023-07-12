@@ -38,6 +38,7 @@
 #include "storage/rowset/bitmap_index_reader.h"
 #include "storage/rowset/bloom_filter_index_reader.h"
 #include "storage/rowset/common.h"
+#include "storage/rowset/inverted_index_reader.h"
 #include "storage/rowset/ordinal_page_index.h"
 #include "storage/rowset/page_handle.h"
 #include "storage/rowset/segment.h"
@@ -61,6 +62,7 @@ class BitmapIndexReader;
 class ColumnIterator;
 class ColumnIteratorOptions;
 class EncodingInfo;
+class InvertedIndexIterator;
 class PageDecoder;
 class PagePointer;
 class ParsedPage;
@@ -99,6 +101,8 @@ public:
     // TODO: StatusOr<std::unique_ptr<ColumnIterator>> new_bitmap_index_iterator()
     Status new_bitmap_index_iterator(BitmapIndexIterator** iterator);
 
+    Status new_inverted_index_iterator(InvertedIndexIterator** iterator);
+
     // Seek to the first entry in the column.
     Status seek_to_first(OrdinalPageIndexIterator* iter);
     Status seek_at_or_before(ordinal_t ordinal, OrdinalPageIndexIterator* iter);
@@ -113,6 +117,7 @@ public:
 
     bool has_zone_map() const { return _zonemap_index != nullptr; }
     bool has_bitmap_index() const { return _bitmap_index != nullptr; }
+    bool has_inverted_index() const { return _inverted_index != nullptr; }
     bool has_bloom_filter_index() const { return _bloom_filter_index != nullptr; }
 
     ZoneMapPB* segment_zone_map() const { return _segment_zone_map.get(); }
@@ -165,6 +170,7 @@ private:
     Status _load_zonemap_index();
     Status _load_ordinal_index();
     Status _load_bitmap_index();
+    Status _load_inverted_index_index();
     Status _load_bloom_filter_index();
 
     Status _parse_zone_map(const ZoneMapPB& zm, vectorized::ZoneMapDetail* detail) const;
@@ -194,6 +200,7 @@ private:
     std::unique_ptr<ZoneMapIndexReader> _zonemap_index;
     std::unique_ptr<OrdinalIndexReader> _ordinal_index;
     std::unique_ptr<BitmapIndexReader> _bitmap_index;
+    std::unique_ptr<InvertedIndexReader> _inverted_index;
     std::unique_ptr<BloomFilterIndexReader> _bloom_filter_index;
 
     std::unique_ptr<ZoneMapPB> _segment_zone_map;

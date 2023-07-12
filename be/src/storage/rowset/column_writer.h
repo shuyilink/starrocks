@@ -111,6 +111,8 @@ public:
 
     virtual Status write_bitmap_index() = 0;
 
+    virtual Status write_inverted_index() =0;
+
     virtual Status write_bloom_filter_index() = 0;
 
     virtual ordinal_t get_next_rowid() const = 0;
@@ -167,6 +169,7 @@ public:
     Status write_ordinal_index() override;
     Status write_zone_map() override;
     Status write_bitmap_index() override;
+    Status write_inverted_index() override;
     Status write_bloom_filter_index() override;
     ordinal_t get_next_rowid() const override { return _next_rowid; }
 
@@ -273,6 +276,8 @@ public:
     Status write_zone_map() override { return Status::OK(); }
 
     Status write_bitmap_index() override { return Status::OK(); }
+
+    Status write_inverted_index() override {return Status::OK(); }
 
     Status write_bloom_filter_index() override { return Status::OK(); }
 

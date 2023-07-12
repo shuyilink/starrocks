@@ -34,6 +34,7 @@
 #include "storage/rowset/common.h"
 #include "storage/rowset/default_value_column_iterator.h"
 #include "storage/rowset/dictcode_column_iterator.h"
+#include "storage/rowset/inverted_index_reader.h"
 #include "storage/rowset/rowid_column_iterator.h"
 #include "storage/rowset/rowid_range_option.h"
 #include "storage/rowset/segment.h"
@@ -232,6 +233,10 @@ private:
 
     Status _apply_bitmap_index();
 
+    Status _init_inverted_index_iterators();
+
+    Status _apply_inverted_index();
+
     Status _apply_del_vector();
 
     Status _read(Chunk* chunk, vector<rowid_t>* rowid, size_t n);
@@ -244,6 +249,7 @@ private:
     RawColumnIterators _column_iterators;
     ColumnDecoders _column_decoders;
     std::vector<BitmapIndexIterator*> _bitmap_index_iterators;
+    std::vector<InvertedIndexIterator*> _inverted_index_iterators;
     // delete predicates
     std::map<ColumnId, ColumnOrPredicate> _del_predicates;
 
@@ -288,6 +294,8 @@ private:
 
     bool _inited = false;
     bool _has_bitmap_index = false;
+
+    bool _has_inverted_index = false;
 
     bool _context_switch_next_time = false;
 };
@@ -365,6 +373,7 @@ Status SegmentIterator::_init() {
     // filter by index stage
     // Use indexes and predicates to filter some data page
     RETURN_IF_ERROR(_init_bitmap_index_iterators());
+    RETURN_IF_ERROR(_init_inverted_index_iterators());
     RETURN_IF_ERROR(_get_row_ranges_by_keys());
     RETURN_IF_ERROR(_get_row_ranges_by_rowid_range());
     RETURN_IF_ERROR(_apply_del_vector());
@@ -1577,6 +1586,24 @@ Status SegmentIterator::_apply_bitmap_index() {
 
     _opts.stats->rows_bitmap_index_filtered += (input_rows - _scan_range.span_size());
     return Status::OK();
+}
+
+Status SegmentIterator::_init_inverted_index_iterators() {
+    DCHECK_EQ(_predicate_columns, _opts.predicates.size());
+    _inverted_index_iterators.resize(ChunkHelper::max_column_id(_schema), nullptr);
+    for (const auto & [cid, _] : _opts.predicates) {
+        if (_inverted_index_iterators[cid] == nullptr) {
+            RETURN_IF_ERROR(_segment->new_inverted_index_iterator(
+                cid, &_inverted_index_iterators[cid]));
+            _has_inverted_index |= (_inverted_index_iterators[cid] != nullptr);
+        }
+        return Status::OK();
+    }
+    return Status::OK();
+}
+
+Status SegmentIterator::_apply_inverted_index() { 
+   return Status::OK(); 
 }
 
 Status SegmentIterator::_apply_del_vector() {

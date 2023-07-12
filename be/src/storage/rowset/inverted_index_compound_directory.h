@@ -1,20 +1,3 @@
-// Licensed to the Apache Software Foundation (ASF) under one
-// or more contributor license agreements.  See the NOTICE file
-// distributed with this work for additional information
-// regarding copyright ownership.  The ASF licenses this file
-// to you under the Apache License, Version 2.0 (the
-// "License"); you may not use this file except in compliance
-// with the License.  You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing,
-// software distributed under the License is distributed on an
-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.  See the License for the
-// specific language governing permissions and limitations
-// under the License.
-
 #pragma once
 
 #include <CLucene.h> // IWYU pragma: keep
@@ -41,8 +24,6 @@ class LockFactory;
 
 namespace starrocks {
 
-using FileSystemPtr = std::shared_ptr<FileSystem>;
-
 class StarrocksCompoundFileWriter : LUCENE_BASE {
 public:
     StarrocksCompoundFileWriter(CL_NS(store)::Directory* dir);
@@ -58,19 +39,19 @@ private:
     CL_NS(store)::Directory* directory;
 };
 
-class CLUCENE_EXPORT StarrocksCompoundDirectory final: public CL_NS(store)::Directory {
+class CLUCENE_EXPORT CompoundDirectory final: public CL_NS(store)::Directory {
 public:
 
     class FSIndexOutput;
     class FSIndexInput;
 
-    friend class StarrocksCompoundDirectory::FSIndexOutput;
-    friend class StarrocksCompoundDirectory::FSIndexInput;
+    friend class CompoundDirectory::FSIndexOutput;
+    friend class CompoundDirectory::FSIndexInput;
 
-    ~StarrocksCompoundDirectory() override =default;
+    ~CompoundDirectory() override =default;
 
-    FileSystemPtr getFileSystem() { return fs; }
-    FileSystemPtr getCompoundFileSystem() { return compound_fs; }
+    FileSystem* getFileSystem() { return fs; }
+    FileSystem* getCompoundFileSystem() { return compound_fs; }
 
     bool list(std::vector<std::string>* names) const override;
     bool fileExists(const char* name) const override;
@@ -78,14 +59,14 @@ public:
     const char* getObjectName() const override;
 
     static const char* getClassName();
-    static StarrocksCompoundDirectory* getDirectory(FileSystemPtr fs, const char* file,
+    static CompoundDirectory* getDirectory(FileSystem* fs, const char* file,
                                                     CL_NS(store)::LockFactory* lock_factory = nullptr,
-                                                    FileSystemPtr cfs_fs = nullptr,
+                                                    FileSystem* cfs_fs = nullptr,
                                                     const char* cfs_file = nullptr);
 
-    static StarrocksCompoundDirectory* getDirectory(FileSystemPtr fs, const char* file,
+    static CompoundDirectory* getDirectory(FileSystem* fs, const char* file,
                                                     bool use_compound_file_writer,
-                                                    FileSystemPtr  cfs_fs = nullptr,
+                                                    FileSystem*  cfs_fs = nullptr,
                                                     const char* cfs_file = nullptr);
 
     int64_t fileModified(const char* name) const override;
@@ -102,14 +83,14 @@ public:
     CL_NS(store)::IndexOutput* createOutput(const char* name) override;
     std::string toString() const override;
 protected:
-    StarrocksCompoundDirectory();
+    CompoundDirectory();
 
     /// Removes an existing file in the directory.
     bool doDeleteFile(const char* name) override;
 
-    void init(FileSystemPtr fs, const char* path,
+    void init(FileSystem* fs, const char* path,
               CL_NS(store)::LockFactory* lock_factory = nullptr,
-              FileSystemPtr compound_fs = nullptr,
+              FileSystem* compound_fs = nullptr,
               const char* cfs_path = nullptr);
 
     void priv_getFN(char* buffer, const char* name) const;
@@ -123,23 +104,23 @@ private:
     std::mutex _this_lock;
     std::string directory;
     std::string cfs_directory;
-    FileSystemPtr fs;
-    FileSystemPtr compound_fs;
+    FileSystem* fs;
+    FileSystem* compound_fs;
 };
 
-class StarrocksCompoundDirectory::FSIndexInput : public CL_NS(store)::BufferedIndexInput {
+class CompoundDirectory::FSIndexInput : public CL_NS(store)::BufferedIndexInput {
 public:
     ~FSIndexInput() override;
 
     static const char* getClassName() { return "FSIndexInput"; }
-    static bool open(FileSystemPtr fs, const char* path, IndexInput*& ret,
+    static bool open(FileSystem* fs, const char* path, IndexInput*& ret,
                      CLuceneError& error, int32_t bufferSize = -1);
 
     IndexInput* clone() const override;
     void close() override;
     int64_t length() const override { return _handle->_length; }
 
-    const char* getDirectoryType() const override { return StarrocksCompoundDirectory::getClassName(); }
+    const char* getDirectoryType() const override { return CompoundDirectory::getClassName(); }
     const char* getObjectName() const override { return getClassName(); }
 
     std::mutex _this_lock;
@@ -152,7 +133,7 @@ protected:
 
 private:
     struct SharedHandle : LUCENE_REFBASE {
-        std::unique_ptr<io::SeekableInputStreamWrapper> _reader;
+        std::unique_ptr<RandomAccessFile> _reader;
         uint64_t _length;
         int64_t _fpos;
         std::mutex* _shared_lock;

@@ -1,20 +1,3 @@
-// Licensed to the Apache Software Foundation (ASF) under one
-// or more contributor license agreements.  See the NOTICE file
-// distributed with this work for additional information
-// regarding copyright ownership.  The ASF licenses this file
-// to you under the Apache License, Version 2.0 (the
-// "License"); you may not use this file except in compliance
-// with the License.  You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing,
-// software distributed under the License is distributed on an
-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.  See the License for the
-// specific language governing permissions and limitations
-// under the License.
-
 #include "storage/rowset/inverted_index_compound_directory.h"
 
 #include "common/status.h"
@@ -83,7 +66,7 @@ const char* WRITE_LOCK_FILE = "write.lock";
 const char* COMPOUND_FILE_EXTENSION = ".idx";
 const int64_t MAX_HEADER_DATA_SIZE = 1024 * 128; // 128k
 
-bool StarrocksCompoundDirectory::disableLocks = false;
+bool CompoundDirectory::disableLocks = false;
 
 StarrocksCompoundFileWriter::StarrocksCompoundFileWriter(CL_NS(store)::Directory* dir) {
     if (dir == nullptr) {
@@ -107,7 +90,7 @@ void StarrocksCompoundFileWriter::writeCompoundFile() {
         files.erase(it);
     }
 
-    auto compound_dir = dynamic_cast<StarrocksCompoundDirectory*>(directory);
+    auto compound_dir = dynamic_cast<CompoundDirectory*>(directory);
     // sort file list by file length
     std::vector<std::pair<std::string, int64_t>> sorted_files;
     sorted_files.reserve(files.size());
@@ -155,7 +138,7 @@ void StarrocksCompoundFileWriter::writeCompoundFile() {
 
     // 2.
     auto compound_fs = compound_dir->getCompoundFileSystem();
-    auto out_dir = StarrocksCompoundDirectory::getDirectory(compound_fs, cfs_path.parent_path().c_str(), false);
+    auto out_dir = CompoundDirectory::getDirectory(compound_fs, cfs_path.parent_path().c_str(), false);
 
     auto out = out_dir->createOutput(idx_name.c_str());
     if (out == nullptr) {
@@ -240,11 +223,11 @@ void StarrocksCompoundFileWriter::copyFile(const char* fileName, CL_NS(store)::I
     input->close();
 }
 
-class StarrocksCompoundDirectory::FSIndexOutput : public CL_NS(store)::BufferedIndexOutput {
+class CompoundDirectory::FSIndexOutput : public CL_NS(store)::BufferedIndexOutput {
 public:
     FSIndexOutput() = default;
 
-    void init(FileSystemPtr fileSystem, const char* path);
+    void init(FileSystem* fileSystem, const char* path);
     ~FSIndexOutput() override;
     void close() override;
     int64_t length() const override;
@@ -254,7 +237,7 @@ private:
     std::unique_ptr<WritableFile> writer;
 };
 
-bool StarrocksCompoundDirectory::FSIndexInput::open(FileSystemPtr fs, const char* path,
+bool CompoundDirectory::FSIndexInput::open(FileSystem* fs, const char* path,
                                                 IndexInput*& ret, CLuceneError& error,
                                                 int32_t buffer_size) {
     CND_PRECONDITION(path != nullptr, "path is NULL");
@@ -294,7 +277,7 @@ bool StarrocksCompoundDirectory::FSIndexInput::open(FileSystemPtr fs, const char
     return false;
 }
 
-StarrocksCompoundDirectory::FSIndexInput::FSIndexInput(const FSIndexInput& other)
+CompoundDirectory::FSIndexInput::FSIndexInput(const FSIndexInput& other)
         : BufferedIndexInput(other) {
     if (other._handle == nullptr) {
         _CLTHROWA(CL_ERR_NullPointer, "other handle is null");
@@ -305,14 +288,14 @@ StarrocksCompoundDirectory::FSIndexInput::FSIndexInput(const FSIndexInput& other
     _pos = other._handle->_fpos; //note where we are currently...
 }
 
-StarrocksCompoundDirectory::FSIndexInput::SharedHandle::SharedHandle(const char* path) {
+CompoundDirectory::FSIndexInput::SharedHandle::SharedHandle(const char* path) {
     _length = 0;
     _fpos = 0;
     _shared_lock = new std::mutex();
     ::strncpy(_path, path, strlen(path));
 }
 
-StarrocksCompoundDirectory::FSIndexInput::SharedHandle::~SharedHandle() {
+CompoundDirectory::FSIndexInput::SharedHandle::~SharedHandle() {
     // if (_reader) {
     //     if (_reader->close().ok()) {
     //         _reader = nullptr;
@@ -320,15 +303,15 @@ StarrocksCompoundDirectory::FSIndexInput::SharedHandle::~SharedHandle() {
     // }
 }
 
-StarrocksCompoundDirectory::FSIndexInput::~FSIndexInput() {
+CompoundDirectory::FSIndexInput::~FSIndexInput() {
     FSIndexInput::close();
 }
 
-CL_NS(store)::IndexInput* StarrocksCompoundDirectory::FSIndexInput::clone() const {
-    return _CLNEW StarrocksCompoundDirectory::FSIndexInput(*this);
+CL_NS(store)::IndexInput* CompoundDirectory::FSIndexInput::clone() const {
+    return _CLNEW CompoundDirectory::FSIndexInput(*this);
 }
 
-void StarrocksCompoundDirectory::FSIndexInput::close() {
+void CompoundDirectory::FSIndexInput::close() {
     BufferedIndexInput::close();
     if (_handle != nullptr) {
         std::mutex* lock = _handle->_shared_lock;
@@ -349,13 +332,13 @@ void StarrocksCompoundDirectory::FSIndexInput::close() {
     }
 }
 
-void StarrocksCompoundDirectory::FSIndexInput::seekInternal(const int64_t position) {
+void CompoundDirectory::FSIndexInput::seekInternal(const int64_t position) {
     CND_PRECONDITION(position >= 0 && position < _handle->_length, "Seeking out of range");
     _pos = position;
 }
 
 /** IndexInput methods */
-void StarrocksCompoundDirectory::FSIndexInput::readInternal(uint8_t* b, const int32_t len) {
+void CompoundDirectory::FSIndexInput::readInternal(uint8_t* b, const int32_t len) {
     CND_PRECONDITION(_handle != nullptr, "shared file handle has closed");
     CND_PRECONDITION(_handle->_reader != nullptr, "file is not open");
     std::lock_guard<std::mutex> wlock(*_handle->_shared_lock);
@@ -383,7 +366,7 @@ void StarrocksCompoundDirectory::FSIndexInput::readInternal(uint8_t* b, const in
     _handle->_fpos = _pos;
 }
 
-void StarrocksCompoundDirectory::FSIndexOutput::init(std::shared_ptr<FileSystem> fs, const char* path) {
+void CompoundDirectory::FSIndexOutput::init(FileSystem* fs, const char* path) {
 
     WritableFileOptions options{.sync_on_close = false, .mode = FileSystem::MUST_CREATE};
     auto status = fs->new_writable_file(options, path);
@@ -395,7 +378,7 @@ void StarrocksCompoundDirectory::FSIndexOutput::init(std::shared_ptr<FileSystem>
     writer = std::move(status.value());
 }
 
-StarrocksCompoundDirectory::FSIndexOutput::~FSIndexOutput() {
+CompoundDirectory::FSIndexOutput::~FSIndexOutput() {
     if (writer) {
         try {
             FSIndexOutput::close();
@@ -406,7 +389,7 @@ StarrocksCompoundDirectory::FSIndexOutput::~FSIndexOutput() {
     }
 }
 
-void StarrocksCompoundDirectory::FSIndexOutput::flushBuffer(const uint8_t* b, const int32_t size) {
+void CompoundDirectory::FSIndexOutput::flushBuffer(const uint8_t* b, const int32_t size) {
     if (writer != nullptr && b != nullptr && size > 0) {
         Slice data {b, (size_t)size};
         Status st = writer->append(data);
@@ -418,7 +401,7 @@ void StarrocksCompoundDirectory::FSIndexOutput::flushBuffer(const uint8_t* b, co
     }
 }
 
-void StarrocksCompoundDirectory::FSIndexOutput::close() {
+void CompoundDirectory::FSIndexOutput::close() {
     try {
         BufferedIndexOutput::close();
     } catch (const CLuceneError& err) {
@@ -445,19 +428,19 @@ void StarrocksCompoundDirectory::FSIndexOutput::close() {
     writer.reset();
 }
 
-int64_t StarrocksCompoundDirectory::FSIndexOutput::length() const {
+int64_t CompoundDirectory::FSIndexOutput::length() const {
     CND_PRECONDITION(writer != nullptr, "file is not open");
     return writer->size();
 }
 
-StarrocksCompoundDirectory::StarrocksCompoundDirectory() {
+CompoundDirectory::CompoundDirectory() {
     filemode = 0644;
     this->lockFactory = nullptr;
 }
 
-void StarrocksCompoundDirectory::init(FileSystemPtr _fs, const char* _path,
+void CompoundDirectory::init(FileSystem* _fs, const char* _path,
                                       CL_NS(store)::LockFactory* lock_factory,
-                                      FileSystemPtr cfs, const char* cfs_path) {
+                                      FileSystem* cfs, const char* cfs_path) {
     fs = std::move(_fs);
     directory = _path;
 
@@ -499,7 +482,7 @@ void StarrocksCompoundDirectory::init(FileSystemPtr _fs, const char* _path,
     }
 }
 
-void StarrocksCompoundDirectory::create() {
+void CompoundDirectory::create() {
     std::lock_guard<std::mutex> wlock(_this_lock);
 
     // clear old files
@@ -515,21 +498,21 @@ void StarrocksCompoundDirectory::create() {
     lockFactory->clearLock(CL_NS(index)::IndexWriter::WRITE_LOCK_NAME);
 }
 
-void StarrocksCompoundDirectory::priv_getFN(char* buffer, const char* name) const {
+void CompoundDirectory::priv_getFN(char* buffer, const char* name) const {
     buffer[0] = 0;
     ::strncpy(buffer, directory.c_str(), directory.size());
     ::strncat(buffer, PATH_DELIMITERA, 1);
     ::strncat(buffer, name, ::strlen(name));
 }
 
-const char* StarrocksCompoundDirectory::getClassName() {
-    return "StarrocksCompoundDirectory";
+const char* CompoundDirectory::getClassName() {
+    return "CompoundDirectory";
 }
-const char* StarrocksCompoundDirectory::getObjectName() const {
+const char* CompoundDirectory::getObjectName() const {
     return getClassName();
 }
 
-bool StarrocksCompoundDirectory::list(std::vector<std::string>* names) const {
+bool CompoundDirectory::list(std::vector<std::string>* names) const {
     CND_PRECONDITION(!directory.empty(), "directory is not open");
     char fl[CL_MAX_DIR];
     priv_getFN(fl, "");
@@ -544,31 +527,31 @@ bool StarrocksCompoundDirectory::list(std::vector<std::string>* names) const {
     return true;
 }
 
-bool StarrocksCompoundDirectory::fileExists(const char* name) const {
+bool CompoundDirectory::fileExists(const char* name) const {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
     char fl[CL_MAX_DIR];
     priv_getFN(fl, name);
     return fs->path_exists(fl).ok();
 }
 
-const char* StarrocksCompoundDirectory::getCfsDirName() const {
+const char* CompoundDirectory::getCfsDirName() const {
     return cfs_directory.c_str();
 }
 
-StarrocksCompoundDirectory* StarrocksCompoundDirectory::getDirectory(FileSystemPtr fs, const char* file,
+CompoundDirectory* CompoundDirectory::getDirectory(FileSystem* fs, const char* file,
                                                                      bool use_compound_file_writer,
-                                                                     FileSystemPtr cfs_fs,
+                                                                     FileSystem* cfs_fs,
                                                                      const char* cfs_file) {
-    StarrocksCompoundDirectory* dir =
+    CompoundDirectory* dir =
             getDirectory(fs, file, (CL_NS(store)::LockFactory*)nullptr, cfs_fs, cfs_file);
     dir->useCompoundFileWriter = use_compound_file_writer;
     return dir;
 }
 
 //static
-StarrocksCompoundDirectory* StarrocksCompoundDirectory::getDirectory(FileSystemPtr _fs, const char* _file,
+CompoundDirectory* CompoundDirectory::getDirectory(FileSystem* _fs, const char* _file,
                                                                      CL_NS(store)::LockFactory* lock_factory,
-                                                                     FileSystemPtr _cfs,
+                                                                     FileSystem* _cfs,
                                                                      const char* _cfs_file) {
     if (!_file || !_file[0]) {
         _CLTHROWA(CL_ERR_IO, "Invalid directory");
@@ -578,12 +561,12 @@ StarrocksCompoundDirectory* StarrocksCompoundDirectory::getDirectory(FileSystemP
         mkdir(_file, 0777);
     }
 
-    auto dir = _CLNEW StarrocksCompoundDirectory();
+    auto dir = _CLNEW CompoundDirectory();
     dir->init(std::move(_fs), _file, lock_factory, std::move(_cfs), _cfs_file);
     return dir;
 }
 
-int64_t StarrocksCompoundDirectory::fileModified(const char* name) const {
+int64_t CompoundDirectory::fileModified(const char* name) const {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
     struct stat buf;
     char buffer[CL_MAX_DIR];
@@ -595,7 +578,7 @@ int64_t StarrocksCompoundDirectory::fileModified(const char* name) const {
     }
 }
 
-void StarrocksCompoundDirectory::touchFile(const char* name) {
+void CompoundDirectory::touchFile(const char* name) {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
     char buffer[CL_MAX_DIR];
     ::snprintf(buffer, CL_MAX_DIR, "%s%s%s", directory.c_str(), PATH_DELIMITERA, name);
@@ -605,7 +588,7 @@ void StarrocksCompoundDirectory::touchFile(const char* name) {
     }
 }
 
-int64_t StarrocksCompoundDirectory::fileLength(const char* name) const {
+int64_t CompoundDirectory::fileLength(const char* name) const {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
     char buffer[CL_MAX_DIR];
     priv_getFN(buffer, name);
@@ -616,7 +599,7 @@ int64_t StarrocksCompoundDirectory::fileLength(const char* name) const {
     return ret.value();
 }
 
-bool StarrocksCompoundDirectory::openInput(const char* name, CL_NS(store)::IndexInput*& ret,
+bool CompoundDirectory::openInput(const char* name, CL_NS(store)::IndexInput*& ret,
                                            CLuceneError& error, int32_t bufferSize) {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
     char fl[CL_MAX_DIR];
@@ -624,7 +607,7 @@ bool StarrocksCompoundDirectory::openInput(const char* name, CL_NS(store)::Index
     return FSIndexInput::open(fs, fl, ret, error, bufferSize);
 }
 
-void StarrocksCompoundDirectory::close() {
+void CompoundDirectory::close() {
     if (useCompoundFileWriter) {
         StarrocksCompoundFileWriter* cfsWriter = _CLNEW StarrocksCompoundFileWriter(this);
         // write compound file
@@ -635,7 +618,7 @@ void StarrocksCompoundDirectory::close() {
     }
 }
 
-bool StarrocksCompoundDirectory::doDeleteFile(const char* name) {
+bool CompoundDirectory::doDeleteFile(const char* name) {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
     char fl[CL_MAX_DIR];
     priv_getFN(fl, name);
@@ -646,7 +629,7 @@ constexpr std::string_view delete_err_prefix = "couldn't delete: ";
 constexpr std::string_view rename_err_prefix = "couldn't rename: ";
 constexpr std::string_view overwrite_err_prefix = "couldn't overwrite: ";
 
-bool StarrocksCompoundDirectory::deleteDirectory() {
+bool CompoundDirectory::deleteDirectory() {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
     char fl[CL_MAX_DIR];
     priv_getFN(fl, "");
@@ -661,7 +644,7 @@ bool StarrocksCompoundDirectory::deleteDirectory() {
     return true;
 }
 
-void StarrocksCompoundDirectory::renameFile(const char* from, const char* to) {
+void CompoundDirectory::renameFile(const char* from, const char* to) {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
     std::lock_guard<std::mutex> wlock(_this_lock);
     char old[CL_MAX_DIR];
@@ -691,7 +674,7 @@ void StarrocksCompoundDirectory::renameFile(const char* from, const char* to) {
     }
 }
 
-CL_NS(store)::IndexOutput* StarrocksCompoundDirectory::createOutput(const char* name) {
+CL_NS(store)::IndexOutput* CompoundDirectory::createOutput(const char* name) {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
     char fl[CL_MAX_DIR];
     priv_getFN(fl, name);
@@ -720,8 +703,8 @@ CL_NS(store)::IndexOutput* StarrocksCompoundDirectory::createOutput(const char* 
     return ret;
 }
 
-std::string StarrocksCompoundDirectory::toString() const {
-    return std::string("StarrocksCompoundDirectory@") + this->directory;
+std::string CompoundDirectory::toString() const {
+    return std::string("CompoundDirectory@") + this->directory;
 }
 
 } // namespace Starrocks
