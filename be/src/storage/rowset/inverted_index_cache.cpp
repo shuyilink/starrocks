@@ -43,7 +43,7 @@ IndexSearcherPtr InvertedIndexSearcherCache::build_index_searcher(FileSystem* fs
                                                                   const std::string& index_dir,
                                                                   const std::string& file_name) {
     auto directory = new CompoundReader(
-                    CompoundDirectory::getDirectory(std::move(fs),
+                    CompoundDirectory::getDirectory(fs,
                     index_dir.c_str()), file_name.c_str(),
                     config::inverted_index_read_buffer_size);
     auto index_searcher = std::make_shared<lucene::search::IndexSearcher>(directory, true);
@@ -119,7 +119,7 @@ Status InvertedIndexSearcherCache::get_index_searcher(FileSystem* fs,
     {
         SCOPED_RAW_TIMER(&stats->inverted_index_searcher_open_timer);
         SCOPED_THREAD_LOCAL_MEM_TRACKER_SETTER(mem_tracker.get());
-        index_searcher = build_index_searcher(std::move(fs), index_dir, file_name);
+        index_searcher = build_index_searcher(fs, index_dir, file_name);
     }
 #endif
 
@@ -155,7 +155,7 @@ Status InvertedIndexSearcherCache::insert(FileSystem* fs,
 #ifndef BE_TEST
     {
         SCOPED_THREAD_LOCAL_MEM_TRACKER_SETTER(mem_tracker.get());
-        index_searcher = build_index_searcher(std::move(fs), index_dir, file_name);
+        index_searcher = build_index_searcher(fs, index_dir, file_name);
     }
 #endif
 
